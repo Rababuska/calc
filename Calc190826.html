@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <title>Полиграфический калькулятор</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.js"></script>
+    <style>
+        .dropdown-menu.show-custom {
+            display: block;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            z-index: 1000;
+            width: 100%;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .section-title {
+            background-color: #e9ecef;
+            padding: 5px 10px;
+            font-weight: bold;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1050;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none;
+        }
+        .toast-notification.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="mt-4">
+    <div class="toast-notification font-weight-bold" :class="{'show': showToast}">
+        {{ toastMessage }}
+    </div>
+
+    <div class="container">
+        <table class="table">
+            <tbody>
+            <tr>
+                <td colspan="3">
+                    <strong>Полиграфический калькулятор (v6.6 - Раздельные раздвижки X и Y)</strong>
+                </td>
+            </tr>
+            
+            <tr>
+                <td style="width: 33%;">
+                    <label>Товар</label>
+                    <select class="form-control mb-2" v-model="selected.good" v-on:change="setDefaultSize">
+                        <option v-for="(item, key) in goods" v-bind:value="key">{{ item.name }}</option>
+                    </select>
+                </td>
+                <td style="width: 33%;">
+                    <label>Размер изделия</label>
+                    <div v-if="selected.good === 'business-card' || selected.good === 'leaflet' || selected.good === 'sticker'">
+                        <select v-if="selected.good === 'leaflet' || selected.good === 'sticker'" class="form-control form-control-sm mb-2" v-model="selected.size">
+                            <option v-for="(item, key) in sizes[selected.good]" v-bind:value="key">{{ item.name }}</option>
+                        </select>
+                        <div class="row" v-if="selected.good === 'business-card' || ((selected.good === 'leaflet' || selected.good === 'sticker') && selected.size === 'custom')">
+                            <div class="col-6">
+                                <small class="text-muted">Ширина</small>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="number" class="form-control" v-model.number="selected.custom_width" min="1">
+                                    <div class="input-group-append"><span class="input-group-text">мм</span></div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Высота</small>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="number" class="form-control" v-model.number="selected.custom_height" min="1">
+                                    <div class="input-group-append"><span class="input-group-text">мм</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else-if="selected.good === 'brochure' || selected.good === 'presentation'">
+                        <select class="form-control form-control-sm mb-2" v-model="selected.size" v-if="selected.good === 'brochure'">
+                            <option v-for="(item, key) in sizes.brochure" v-bind:value="key">{{ item.name }}</option>
+                        </select>
+                        <select class="form-control form-control-sm mb-2" v-model="selected.size" v-if="selected.good === 'presentation'">
+                            <option v-for="(item, key) in sizes.leaflet" v-bind:value="key">{{ item.name }}</option>
+                        </select>
+                        <select class="form-control form-control-sm mb-2" v-model="selected.presentation_type" v-if="selected.good === 'presentation'">
+                            <option value="presentation">Презентация</option>
+                            <option value="notebook">Блокнот</option>
+                        </select>
+                        <select class="form-control form-control-sm" :class="{'mb-2': selected.good === 'presentation'}" v-model="selected.orientation">
+                            <option value="portrait">Книжная (вертикальная)</option>
+                            <option value="landscape">Альбомная (горизонтальная)</option>
+                        </select>
+                        <select class="form-control form-control-sm" v-model="selected.binding_edge" v-if="selected.good === 'presentation'">
+                            <option value="long">Пружина по длинной стороне</option>
+                            <option value="short">Пружина по короткой стороне</option>
+                        </select>
+                    </div>
+                    <div v-else-if="selected.good === 'envelope'" class="mt-2">
+                        <span class="text-muted d-block mb-1">Формат задается физическим конвертом</span>
+                        <select class="form-control form-control-sm" v-model="selected.envelope_size">
+                            <option value="small">До С4 включительно (малый формат)</option>
+                            <option value="large">Больше С4 (большой формат)</option>
+                        </select>
+                    </div>
+                </td>
+                <td style="width: 33%;">
+                    <label>Тираж (шт)</label>
+                    <input class="form-control mb-2" v-model.number="selected.circulation" type="number" min="1">
+                    
+                    <div v-if="selected.good === 'brochure'">
+                        <label>Страниц (кратно 4)</label>
+                        <input class="form-control form-control-sm" v-model.number="selected.pages_count" @change="validatePages" type="number" min="4" step="4">
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td colspan="3" class="p-0 border-0">
+                    
+                    <div v-if="selected.good !== 'brochure' && selected.good !== 'presentation'" class="row m-0 p-2">
+                        <div class="col-4 pl-0">
+                            <label>Цветность</label>
+                            <select class="form-control form-control-sm" v-model="selected.color" :disabled="selected.good === 'envelope' || selected.good === 'sticker'">
+                                <option v-for="(item, key) in colors" v-bind:value="key" v-if="!(selected.good === 'sticker' && !item.name.includes('+0'))">{{ item.name }}</option>
+                            </select>
+                            <small class="text-muted" v-if="selected.good === 'sticker'">Только односторонняя печать</small>
+                        </div>
+                        <div class="col-4">
+                            <label>Ламинация / Припресс</label>
+                            <select class="form-control form-control-sm" v-model="selected.lamination" :disabled="selected.good === 'envelope'">
+                                <option v-for="(item, key) in available_laminations" v-bind:value="key">{{ item.name }}</option>
+                            </select>
+                        </div>
+                        <div class="col-4 pr-0">
+                            <label v-if="selected.good === 'envelope'">Стоимость 1 конверта (тг)</label>
+                            <label v-else>Бумага</label>
+                            
+                            <div v-if="selected.good === 'envelope'">
+                                <input type="number" class="form-control form-control-sm" v-model.number="selected.envelope_price" min="0" step="any">
+                            </div>
+                            <div v-else>
+                                <paper-selector v-model="selected.paper" :papers="papers" :is-sticker="selected.good === 'sticker'"></paper-selector>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="selected.good === 'brochure'" class="p-2">
+                        <div class="section-title text-primary">Настройки обложки (4 страницы)</div>
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <small>Цветность обложки</small>
+                                <select class="form-control form-control-sm" v-model="selected.cover_color">
+                                    <option v-for="(item, key) in colors" v-bind:value="key">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <small>Припресс обложки</small>
+                                <select class="form-control form-control-sm" v-model="selected.cover_lamination">
+                                    <option v-for="(item, key) in brochure_laminations" v-bind:value="key">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <small>Бумага обложки</small>
+                                <paper-selector v-model="selected.cover_paper" :papers="papers"></paper-selector>
+                            </div>
+                            <div class="col-4 mt-2">
+                                <small>Плоттерная резка</small>
+                                <select class="form-control form-control-sm" v-model="selected.cover_plotter_cut">
+                                    <option value="none">Без плоттерной резки</option>
+                                    <option value="plotter">Плоттерная резка</option>
+                                    <option value="plotter_perf">Плоттерная резка с перфорацией</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="section-title text-success" v-if="selected.pages_count > 4">Настройки внутреннего блока ({{ selected.pages_count - 4 }} стр.)</div>
+                        <div class="row" v-if="selected.pages_count > 4">
+                            <div class="col-4">
+                                <small>Цветность блока</small>
+                                <select class="form-control form-control-sm" v-model="selected.block_color">
+                                    <option v-for="(item, key) in colors" v-bind:value="key">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <small>Припресс блока</small>
+                                <select class="form-control form-control-sm" v-model="selected.block_lamination">
+                                    <option v-for="(item, key) in brochure_laminations" v-bind:value="key">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="col-4">
+                                <small>Бумага блока</small>
+                                <paper-selector v-model="selected.block_paper" :papers="papers"></paper-selector>
+                            </div>
+                            
+                            <div class="col-12 mt-3 pt-2 border-top">
+                                <small class="font-weight-bold text-danger">Спецтонер для ВСЕГО блока</small>
+                                <div class="row mt-1">
+                                    <div class="col-6">
+                                        <select class="form-control form-control-sm" v-model="selected.block_toner">
+                                            <option v-for="(item, key) in toners" v-bind:value="key">{{ item.name }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6" v-if="selected.block_toner !== 'none'">
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" class="form-control" v-model.number="selected.block_toners_usd" min="0" step="any" placeholder="Расход в USD на тираж">
+                                            <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="selected.good === 'presentation'" class="p-2 bg-light">
+                        
+                        <div class="section-title text-primary">Настройки обложки (1 лист)</div>
+                        <div class="row mb-3 bg-white p-2 border rounded m-1">
+                            <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.cover_color"><option v-for="(item, key) in colors" :value="key">{{ item.name }}</option></select></div>
+                            <div class="col-5"><small>Бумага</small><paper-selector v-model="selected.cover_paper" :papers="papers"></paper-selector></div>
+                            <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.cover_lamination"><option v-for="(item, key) in laminations" :value="key">{{ item.name }}</option></select></div>
+                            <div class="col-4 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="selected.cover_toner"><option v-for="(item, key) in toners" :value="key">{{ item.name }}</option></select></div>
+                            <div class="col-4 mt-2"><small>Плоттерная резка</small><select class="form-control form-control-sm" v-model="selected.cover_plotter_cut"><option value="none">Без плоттерной резки</option><option value="plotter">Плоттерная резка</option><option value="plotter_perf">С перфорацией</option></select></div>
+                            <div class="col-4 mt-2" v-if="selected.cover_toner !== 'none'"><small>Расход тонера ($) на тираж</small><input type="number" class="form-control form-control-sm" v-model.number="selected.cover_toner_usd" step="any"></div>
+                        </div>
+
+                        <div class="section-title text-primary mt-3">Настройки задней обложки (1 лист)</div>
+                        <div class="row mb-3 bg-white p-2 border rounded m-1">
+                            <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.back_cover_color"><option v-for="(item, key) in colors" :value="key">{{ item.name }}</option></select></div>
+                            <div class="col-5"><small>Бумага</small><paper-selector v-model="selected.back_cover_paper" :papers="papers"></paper-selector></div>
+                            <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.back_cover_lamination"><option v-for="(item, key) in laminations" :value="key">{{ item.name }}</option></select></div>
+                            <div class="col-4 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="selected.back_cover_toner"><option v-for="(item, key) in toners" :value="key">{{ item.name }}</option></select></div>
+                            <div class="col-4 mt-2"><small>Плоттерная резка</small><select class="form-control form-control-sm" v-model="selected.back_cover_plotter_cut"><option value="none">Без плоттерной резки</option><option value="plotter">Плоттерная резка</option><option value="plotter_perf">С перфорацией</option></select></div>
+                            <div class="col-4 mt-2" v-if="selected.back_cover_toner !== 'none'"><small>Расход тонера ($) на тираж</small><input type="number" class="form-control form-control-sm" v-model.number="selected.back_cover_toner_usd" step="any"></div>
+                        </div>
+
+                        <div class="section-title text-success mt-3">Внутренние блоки</div>
+                        <div v-for="(block, idx) in selected.presentation_blocks" :key="block.id" class="border p-2 mb-2 bg-white m-1 rounded border-success">
+                            <div class="d-flex justify-content-between mb-2">
+                                <strong>Блок {{ idx + 1 }}</strong>
+                                <button class="btn btn-sm btn-outline-danger py-0" @click="removeBlock(idx)" v-if="selected.presentation_blocks.length > 1">Удалить блок</button>
+                            </div>
+                            <div class="row">
+                                <div class="col-3"><small>Листов (шт)</small><input type="number" class="form-control form-control-sm" v-model.number="block.sheets" min="1"></div>
+                                <div class="col-3"><small>Цветность</small><select class="form-control form-control-sm" v-model="block.color"><option v-for="(item, key) in colors" :value="key">{{ item.name }}</option></select></div>
+                                <div class="col-6"><small>Бумага</small><paper-selector v-model="block.paper" :papers="papers"></paper-selector></div>
+                                <div class="col-6 mt-2"><small>Ламинация</small><select class="form-control form-control-sm" v-model="block.lamination"><option v-for="(item, key) in laminations" :value="key">{{ item.name }}</option></select></div>
+                                <div class="col-3 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="block.toner"><option v-for="(item, key) in toners" :value="key">{{ item.name }}</option></select></div>
+                                <div class="col-3 mt-2" v-if="block.toner !== 'none'"><small>Расход ($)</small><input type="number" class="form-control form-control-sm" v-model.number="block.toner_usd" step="any"></div>
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-success ml-1" @click="addBlock">+ Добавить еще один блок</button>
+                    </div>
+
+                    <div v-if="selected.good !== 'envelope' && (selected.paper === 'custom' || selected.cover_paper === 'custom' || selected.block_paper === 'custom' || selected.back_cover_paper === 'custom' || hasCustomBlockPaper)" class="m-2 p-3 bg-dark text-white border rounded">
+                        <label class="font-weight-bold text-warning">Параметры своей бумаги:</label>
+                        <div class="row">
+                            <div class="col-4">
+                                <small>Цена за лист (тг)</small>
+                                <input type="number" class="form-control form-control-sm" v-model.number="selected.custom_paper_price" min="0">
+                            </div>
+                            <div class="col-4">
+                                <small>Ширина листа (мм)</small>
+                                <input type="number" class="form-control form-control-sm" v-model.number="selected.custom_paper_width" min="1">
+                            </div>
+                            <div class="col-4">
+                                <small>Высота листа (мм)</small>
+                                <input type="number" class="form-control form-control-sm" v-model.number="selected.custom_paper_height" min="1">
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+
+            <tr class="bg-light" v-if="selected.good !== 'presentation'">
+                <td colspan="3">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="font-weight-bold text-info">Спецтонер 1 (В основной прогон)</label>
+                            <small class="d-block text-muted mb-2" v-if="selected.good === 'brochure'">Указывается только для обложки</small>
+                            <select class="form-control form-control-sm mb-2" v-model="selected.toner1">
+                                <option v-for="(item, key) in toners" v-bind:value="key">{{ item.name }}</option>
+                            </select>
+                            <div class="row" v-if="selected.toner1 !== 'none'">
+                                <div class="col-12 mt-1">
+                                    <small>Расход тонера (USD) на ВЕСЬ тираж:</small>
+                                    <div class="input-group input-group-sm mb-1">
+                                        <input type="number" class="form-control" v-model.number="selected.toner1_usd" min="0" step="any" placeholder="0.00">
+                                        <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 border-left">
+                            <label class="font-weight-bold text-danger">Дополнительный прогон</label>
+                            <small class="d-block text-muted mb-2" v-if="selected.good === 'brochure'">Указывается только для обложки</small>
+                            <div class="custom-control custom-checkbox mt-1 mb-2">
+                                <input type="checkbox" class="custom-control-input" id="extraRunCheck" v-model="selected.add_extra_run">
+                                <label class="custom-control-label" for="extraRunCheck">Включить доп. прогон</label>
+                            </div>
+                            
+                            <div v-if="selected.add_extra_run">
+                                <select class="form-control form-control-sm mb-2" v-model="selected.toner2">
+                                    <option v-for="(item, key) in toners" v-bind:value="key">{{ item.name }}</option>
+                                </select>
+                                <div class="row" v-if="selected.toner2 !== 'none'">
+                                    <div class="col-12">
+                                        <small>Расход тонера (USD) на ВЕСЬ тираж:</small>
+                                        <div class="input-group input-group-sm mb-1">
+                                            <input type="number" class="form-control" v-model.number="selected.toner2_usd" min="0" step="any" placeholder="0.00">
+                                            <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+
+            <tr v-if="selected.good === 'business-card' || selected.good === 'leaflet' || selected.good === 'sticker'">
+                <td colspan="3">
+                    <div class="row">
+                        <div class="col-6" v-if="selected.good === 'business-card' || selected.good === 'leaflet'">
+                            <small class="text-muted font-weight-bold">Тип резки:</small>
+                            <select class="form-control form-control-sm" v-model="selected.cut_type">
+                                <option value="double">Двойной рез (с вылетами 3 мм)</option>
+                                <option value="single">Одинарный рез (без вылетов)</option>
+                            </select>
+                        </div>
+                        <div class="col-6" v-if="selected.good === 'leaflet' || selected.good === 'sticker'">
+                        <small class="text-muted font-weight-bold">Плоттерная резка:</small>
+                        <select class="form-control form-control-sm" v-model="selected.plotter_cut">
+                                <option value="none">Без плоттерной резки</option>
+                                <option value="plotter">Плоттерная резка</option>
+                                <option value="plotter_perf">Плоттерная резка с перфорацией</option>
+                            </select>
+                        </div>
+                        <div class="col-6" v-if="selected.good === 'business-card' || selected.good === 'leaflet'">
+                            <small class="text-muted font-weight-bold">Постпечать:</small>
+                            <div class="custom-control custom-checkbox mt-1">
+                                <input type="checkbox" class="custom-control-input" id="roundCorners" v-model="selected.round_corners">
+                                <label class="custom-control-label" for="roundCorners">Скругление углов</label>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+
+            <tr class="bg-light">
+                
+                <td colspan="2" style="vertical-align: top;">
+                    <strong>Раскладка на листе и Себестоимость:</strong><br/>
+                    
+                    <div v-if="selected.good !== 'brochure' && selected.good !== 'envelope' && selected.good !== 'presentation'">
+                        Помещается <strong>{{ layout.base.yield }}</strong> шт. на лист 
+                        <small class="text-danger font-weight-bold" v-if="layout.base.yield === 0">(Не помещается на лист!)</small><br/>
+                    </div>
+                    
+                    <div v-if="selected.good === 'envelope'">
+                        <strong>Итоговое количество:</strong> {{ selected.circulation }} шт.<br/>
+                    </div>
+
+                    <div v-if="selected.good === 'brochure'">
+                        <strong>Обложка:</strong> {{ layout.cover.yield }} разворотов на лист 
+                        <small class="text-danger font-weight-bold" v-if="layout.cover.yield === 0">(Разворот обложки не помещается!)</small><br/>
+                        <span v-if="selected.pages_count > 4">
+                            <strong>Блок:</strong> {{ layout.block.yield }} разворотов на лист
+                            <small class="text-danger font-weight-bold" v-if="layout.block.yield === 0">(Разворот блока не помещается!)</small>
+                        </span>
+                    </div>
+
+                    <div v-if="selected.good === 'presentation'">
+                        <strong>Обложка:</strong> {{ layout.presentation.cover_yield }} на лист 
+                        <small class="text-danger font-weight-bold" v-if="layout.presentation.cover_yield === 0">(Не помещается!)</small><br/>
+                        <strong>Подложка:</strong> {{ layout.presentation.back_cover_yield }} на лист 
+                        <small class="text-danger font-weight-bold" v-if="layout.presentation.back_cover_yield === 0">(Не помещается!)</small><br/>
+                        <span v-for="(y, i) in layout.presentation.blocks_yield" :key="'yld'+i">
+                            <strong>Блок {{i+1}}:</strong> {{ y }} на лист
+                            <small class="text-danger font-weight-bold" v-if="y === 0">(Не помещается!)</small><br/>
+                        </span>
+                    </div>
+
+                    <hr class="my-2">
+                    <div class="text-secondary" style="font-size: 0.9em;">
+                        <strong>Общий расход листов (штук):</strong> {{ result_price.totalPapersCount }} шт.<br/>
+                        
+                        <div v-if="selected.good !== 'brochure' && selected.good !== 'envelope' && selected.good !== 'presentation'">
+                            <strong>Себестоимость 1 листа:</strong> {{ result_price.totalCostPerSheet }} тг
+                            <ul class="mb-1 pl-3" style="font-size: 0.95em;">
+                                <li>Бумага: {{ result_price.paperPrice }} тг</li>
+                                <li>Печать (основная): {{ result_price.colorPrice }} тг</li>
+                                <li v-if="result_price.laminationPrice > 0">Ламинация/Припресс: {{ result_price.laminationPrice }} тг</li>
+                                
+                                <li v-if="result_price.toner1_runs_cost > 0 || result_price.toner1_usd_lump > 0">Спецтонер 1: 
+                                    <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                        <li>Прогоны (2×): {{ result_price.toner1_runs_cost }} тг/лист</li>
+                                        <li v-if="result_price.toner1_usd_lump > 0">Тонер (на тираж): {{ result_price.toner1_usd_lump }} тг</li>
+                                    </ul>
+                                </li>
+                                
+                                <li v-if="result_price.extra_run_cost > 0">Доп. прогон (CMYK): {{ result_price.extra_run_cost }} тг/лист</li>
+                                
+                                <li v-if="result_price.toner2_runs_cost > 0 || result_price.toner2_usd_lump > 0">Спецтонер 2: 
+                                    <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                        <li>Прогоны (2×): {{ result_price.toner2_runs_cost }} тг/лист</li>
+                                        <li v-if="result_price.toner2_usd_lump > 0">Тонер (на тираж): {{ result_price.toner2_usd_lump }} тг</li>
+                                    </ul>
+                                </li>
+                                
+                                <li v-if="result_price.plotterCost > 0">Плоттер: {{ result_price.plotterCost }} тг</li>
+                                <li v-if="selected.round_corners">Скругление углов</li>
+                            </ul>
+                        </div>
+                        
+                        <div v-if="selected.good === 'envelope'">
+                            <strong>Себестоимость 1 шт:</strong> {{ result_price.totalCostPerSheet }} тг
+                            <ul class="mb-1 pl-3" style="font-size: 0.95em;">
+                                <li>Конверт: {{ result_price.paperPrice }} тг</li>
+                                <li>Печать (базовая): {{ result_price.colorPrice }} тг</li>
+                                
+                                <li v-if="result_price.toner1_runs_cost > 0 || result_price.toner1_usd_lump > 0">Спецтонер 1:
+                                    <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                        <li>Прогоны (2×): {{ result_price.toner1_runs_cost }} тг/шт</li>
+                                        <li v-if="result_price.toner1_usd_lump > 0">Тонер (на тираж): {{ result_price.toner1_usd_lump }} тг</li>
+                                    </ul>
+                                </li>
+                                
+                                <li v-if="result_price.extra_run_cost > 0">Доп. прогон (CMYK): {{ result_price.extra_run_cost }} тг/шт</li>
+                                
+                                <li v-if="result_price.toner2_runs_cost > 0 || result_price.toner2_usd_lump > 0">Спецтонер 2:
+                                    <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                        <li>Прогоны (2×): {{ result_price.toner2_runs_cost }} тг/шт</li>
+                                        <li v-if="result_price.toner2_usd_lump > 0">Тонер (на тираж): {{ result_price.toner2_usd_lump }} тг</li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="selected.good === 'brochure'">
+                            <div class="mb-2">
+                                <strong>Обложка ({{ result_price.coverSheets }} листов по {{ result_price.coverCostPerSheet }} тг):</strong>
+                                <ul class="mb-1 pl-3" style="font-size: 0.95em;">
+                                    <li>Бумага: {{ result_price.coverPaperPrice }} тг</li>
+                                    <li>Печать (основная): {{ result_price.coverColorPrice }} тг</li>
+                                    <li v-if="result_price.coverLaminationPrice > 0">Припресс: {{ result_price.coverLaminationPrice }} тг</li>
+                                    <li v-if="result_price.coverPlotterCost > 0">Плоттерная резка: {{ result_price.coverPlotterCost }} тг</li>
+                                    
+                                    <li v-if="result_price.toner1_runs_cost > 0 || result_price.toner1_usd_lump > 0">Спецтонер 1:
+                                        <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны (2×): {{ result_price.toner1_runs_cost }} тг/лист</li>
+                                            <li v-if="result_price.toner1_usd_lump > 0">Тонер (на тираж): {{ result_price.toner1_usd_lump }} тг</li>
+                                        </ul>
+                                    </li>
+                                    
+                                    <li v-if="result_price.extra_run_cost > 0">Доп. прогон (CMYK): {{ result_price.extra_run_cost }} тг/лист</li>
+                                    
+                                    <li v-if="result_price.toner2_runs_cost > 0 || result_price.toner2_usd_lump > 0">Спецтонер 2:
+                                        <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны (2×): {{ result_price.toner2_runs_cost }} тг/лист</li>
+                                            <li v-if="result_price.toner2_usd_lump > 0">Тонер (на тираж): {{ result_price.toner2_usd_lump }} тг</li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div v-if="selected.pages_count > 4">
+                                <strong>Внутренний блок ({{ result_price.blockSheets }} листов по {{ result_price.blockCostPerSheet }} тг):</strong>
+                                <ul class="mb-1 pl-3" style="font-size: 0.95em;">
+                                    <li>Бумага: {{ result_price.blockPaperPrice }} тг</li>
+                                    <li>Печать (основная): {{ result_price.blockColorPrice }} тг</li>
+                                    <li v-if="result_price.blockLaminationPrice > 0">Припресс: {{ result_price.blockLaminationPrice }} тг</li>
+                                </ul>
+                                <div v-if="selected.block_toner !== 'none' && result_price.block_toners_cost > 0" class="mt-1">
+                                    <strong>Спецтонер блока:</strong> {{ result_price.block_toners_cost }} тг
+                                    <ul class="mb-1 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                        <li>Прогоны: {{ result_price.block_toners_runs_cost }} тг (за весь тираж блока)</li>
+                                        <li v-if="result_price.block_toners_usd_converted > 0">Тонер (на тираж): {{ result_price.block_toners_usd_converted }} тг</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="selected.good === 'presentation'">
+                            <strong>Обложка ({{ result_price.pres.coverSheets }} л.):</strong> {{ result_price.pres.coverCostPerSheet }} тг/л 
+                            <span class="text-danger" v-if="result_price.pres.cTonerUsdLump > 0">+ {{ result_price.pres.cTonerUsdLump }} тг (тонер)</span>
+                            <span class="text-info" v-if="result_price.pres.coverPlotterCost > 0"> (вкл. плоттер: {{ result_price.pres.coverPlotterCost }} тг/л)</span><br/>
+                            
+                            <strong>Задняя обложка ({{ result_price.pres.backSheets }} л.):</strong> {{ result_price.pres.backCostPerSheet }} тг/л 
+                            <span class="text-danger" v-if="result_price.pres.bcTonerUsdLump > 0">+ {{ result_price.pres.bcTonerUsdLump }} тг (тонер)</span>
+                            <span class="text-info" v-if="result_price.pres.backPlotterCost > 0"> (вкл. плоттер: {{ result_price.pres.backPlotterCost }} тг/л)</span><br/>
+                            
+                            <strong>Внутренние блоки (всего {{ result_price.pres.blockSra3Sheets }} л. SRA3):</strong> {{ result_price.pres.totalBlocksCost }} тг<br/>
+                            
+                            <strong>Сборка на пружину:</strong> {{ result_price.pres.bindCostPerItem }} тг/шт (Итого за сборку: {{ result_price.pres.totalBindCost }} тг)
+                        </div>
+
+                        <hr class="my-1 border-secondary">
+                        <div><strong>Чистая себестоимость тиража:</strong> {{ result_price.productionCost }} тг</div>
+                        <div class="mt-1 text-dark"><strong>Себестоимость с учётом налогов:</strong> {{ result_price.productionCostWithTax }} тг</div>
+                    </div>
+                </td>
+
+                <td style="vertical-align: middle; width: 30%;">
+                    <div class="mb-2">
+                        Стоимость 1 шт:<br/> 
+                        <strong v-if="result_price.doesNotFit" class="text-danger">-</strong>
+                        <strong v-else>{{ result_price.one_total }} тг</strong>
+                    </div>
+                    <div class="p-2 bg-success text-white rounded" :class="{'bg-danger': result_price.doesNotFit}">
+                        Итого тираж:<br/>
+                        <h4 class="mb-0" v-if="result_price.doesNotFit">НЕ ПОМЕЩАЕТСЯ</h4>
+                        <h4 class="mb-0" v-else>{{ result_price.total }} тг</h4>
+                    </div>
+                </td>
+                
+            </tr>
+            </tbody>
+        </table>
+
+        <div class="mt-5 mb-5">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="text-secondary mb-0">Таблица для копирования (Word / Excel)</h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary shadow-sm mr-2" @click="copyTable('table')">Скопировать всю таблицу</button>
+                    <button class="btn btn-sm btn-outline-secondary shadow-sm" @click="copyTable('row')">Скопировать только строку</button>
+                </div>
+            </div>
+            
+            <div class="p-3 bg-white border rounded">
+                <table ref="copyTable" width="100%" border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000; font-family: 'Times New Roman', Times, serif; font-size: 14px;">
+                    <colgroup>
+                        <col width="5%">
+                        <col width="15%">
+                        <col width="35%">
+                        <col width="10%">
+                        <col width="12%">
+                        <col width="13%">
+                        <col width="10%">
+                    </colgroup>
+                    <thead style="background-color: #f2f2f2;">
+                        <tr>
+                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">№</th>
+                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Наименование</th>
+                            <th align="left" style="border: 1px solid #000; padding: 6px; text-align: left;">Данные</th>
+                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Кол-во / шт</th>
+                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Стоимость за единицу / теңге</th>
+                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Итого / теңге</th>
+                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Срок / рабочие дни</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr ref="copyRow">
+                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">1</td>
+                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                <strong>{{ selected.good === 'presentation' ? (selected.presentation_type === 'notebook' ? 'Блокнот' : 'Презентация') : goods[selected.good].name }}</strong>
+                            </td>
+                            <td valign="top" style="border: 1px solid #000; padding: 6px; vertical-align: top;">
+                                Размер: {{ spec_size }}<br/>
+                                
+                                <span v-if="selected.good !== 'brochure' && selected.good !== 'envelope' && selected.good !== 'presentation'">
+                                    Цветность: {{ colors[selected.color].name }}<br/>
+                                    Ламинация: {{ laminations[selected.lamination].name }}<br/>
+                                    Бумага: {{ spec_paper }}<br/>
+                                    <span v-if="(selected.good === 'leaflet' || selected.good === 'sticker') && selected.plotter_cut !== 'none'">Плоттерная резка<br/></span>
+                                    <span v-if="selected.round_corners">Скругление углов<br/></span>
+                                </span>
+                                
+                                <span v-if="selected.good === 'envelope'">
+                                    Цветность: {{ colors[selected.color].name }}<br/>
+                                    Конверт<br/>
+                                </span>
+                                
+                                <span v-if="selected.good === 'brochure'">
+                                    <strong>Обложка:</strong> {{ colors[selected.cover_color].name }}, {{ laminations[selected.cover_lamination].name }}, {{ getPaperName(selected.cover_paper) }}<span v-if="selected.cover_plotter_cut !== 'none'">, Плоттерная резка</span><br/>
+                                    <strong v-if="selected.pages_count > 4">Блок:</strong> <span v-if="selected.pages_count > 4">{{ colors[selected.block_color].name }}, {{ laminations[selected.block_lamination].name }}, {{ getPaperName(selected.block_paper) }}<br/></span>
+                                    <span v-if="selected.block_toner !== 'none'">Спецтонер блока: {{ toners[selected.block_toner].name }}<br/></span>
+                                </span>
+
+                                <span v-if="selected.good === 'presentation'">
+                                    <strong>Обложка:</strong> {{ colors[selected.cover_color].name }}, {{ laminations[selected.cover_lamination].name }}, {{ getPaperName(selected.cover_paper) }} <span v-if="selected.cover_toner !== 'none'">+ {{ toners[selected.cover_toner].name }}</span><span v-if="selected.cover_plotter_cut !== 'none'">, Плоттерная резка</span><br/>
+                                    <strong>Задняя обложка:</strong> {{ colors[selected.back_cover_color].name }}, {{ laminations[selected.back_cover_lamination].name }}, {{ getPaperName(selected.back_cover_paper) }} <span v-if="selected.back_cover_toner !== 'none'">+ {{ toners[selected.back_cover_toner].name }}</span><span v-if="selected.back_cover_plotter_cut !== 'none'">, Плоттерная резка</span><br/>
+                                    <strong v-if="selected.presentation_blocks.length > 0">Внутренние блоки:</strong><br/>
+                                    <span v-for="(b, i) in selected.presentation_blocks" :key="'copy_'+i">
+                                        &nbsp;&nbsp;&nbsp;- Блок {{i+1}} ({{b.sheets}} л.): {{ colors[b.color].name }}, {{ laminations[b.lamination].name }}, {{ getPaperName(b.paper) }} <span v-if="b.toner !== 'none'">+ {{ toners[b.toner].name }}</span><br/>
+                                    </span>
+                                    Сборка на металлическую пружину ({{ selected.binding_edge === 'long' ? 'по длинной стороне' : 'по короткой стороне' }})<br/>
+                                </span>
+
+                                <span v-if="selected.toner1 !== 'none' && selected.good !== 'presentation'">5-й цвет{{ selected.good === 'brochure' ? ' (Обложка)' : '' }}: {{ toners[selected.toner1].name }}<br/></span>
+                                <span v-if="selected.add_extra_run && selected.good !== 'presentation'">Доп. прогон{{ selected.good === 'brochure' ? ' (Обложка)' : '' }}: {{ selected.toner2 !== 'none' ? toners[selected.toner2].name : 'Да (CMYK)' }}<br/></span>
+                            </td>
+                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                {{ selected.circulation }}
+                            </td>
+                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                {{ result_price.doesNotFit ? '-' : result_price.one_total }}
+                            </td>
+                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                <strong>{{ result_price.doesNotFit ? 'НЕ ПОМЕЩАЕТСЯ' : result_price.total }}</strong>
+                            </td>
+                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                {{ delivery_time }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+// Глобальный компонент для выбора бумаги с поиском
+Vue.component('paper-selector', {
+    props: ['value', 'papers', 'isSticker'],
+    data: function() {
+        return {
+            query: '',
+            isOpen: false
+        }
+    },
+    computed: {
+        filteredPapers: function() {
+            let search = this.query.toLowerCase();
+            let result = {};
+            for (let key in this.papers) {
+                if (this.isSticker && key !== 'p36' && key !== 'p37') continue;
+                let str = this.papers[key].name.toLowerCase() + ' (' + this.papers[key].price + ' тг)';
+                if (str.includes(search)) result[key] = this.papers[key];
+            }
+            return result;
+        }
+    },
+    watch: {
+        value: {
+            immediate: true,
+            handler: function(newVal) {
+                if (newVal === 'custom') {
+                    this.query = '--- Свой вариант ---';
+                } else if (this.papers[newVal]) {
+                    this.query = this.papers[newVal].name + ' (' + this.papers[newVal].price + ' тг)';
+                } else {
+                    this.query = '';
+                }
+            }
+        }
+    },
+    template: `
+    <div style="position: relative; z-index: 10;">
+        <input type="text" class="form-control form-control-sm" v-model="query" @focus="isOpen = true; $event.target.select()" @blur="blurPaper" placeholder="Поиск...">
+        <div class="dropdown-menu show-custom shadow-sm" v-show="isOpen">
+            <a v-if="!isSticker" class="dropdown-item font-weight-bold text-primary bg-light" href="#" @mousedown.prevent="selectPaper('custom')">--- Свой вариант ---</a>
+            <a class="dropdown-item" href="#" v-for="(item, key) in filteredPapers" @mousedown.prevent="selectPaper(key)">{{ item.name }} ({{ item.price }} тг)</a>
+        </div>
+    </div>
+    `,
+    methods: {
+        selectPaper: function(key) {
+            this.$emit('input', key);
+            this.isOpen = false;
+        },
+        blurPaper: function() {
+            setTimeout(() => {
+                this.isOpen = false;
+                if (this.value === 'custom') {
+                    this.query = '--- Свой вариант ---';
+                } else if (this.papers[this.value]) {
+                    this.query = this.papers[this.value].name + ' (' + this.papers[this.value].price + ' тг)';
+                }
+            }, 200);
+        }
+    }
+});
+
+var app = new Vue({
+    el: '#app',
+    data: {
+        toastMessage: '',
+        showToast: false,
+
+        config: {
+            tax: 1.36,
+            profit_per_one: 2.3, 
+            profit_business_card: 3, 
+            margins: 4,     // Свободный край (по 2 мм с каждой стороны)
+            bleeds: 6,      // Вылеты (по 3 мм на сторону)
+            
+            usd_rate: 500,
+            
+            run_color: 44,
+            run_bw: 20,
+            run_small: 25,
+            
+            press_matt_sra3: 29,
+            press_gl_sra3: 27,
+            press_touch_sra3: 37,
+            
+            lam_matt100: 235,
+            lam_gl100: 125,
+            lam_matt150: 325,
+            lam_gl150: 190,
+            
+            plotter_sra3: 150,
+            plotter_perf_sra3: 300,
+            
+            selling_round_corners_price: 5
+        },
+        
+        blockIdCounter: 2,
+
+        selected: {
+            good: 'leaflet',
+            size: 'a4',
+            circulation: 100,
+            
+            color: '4_4',
+            lamination: 'none',
+            paper: 'p8', 
+            
+            envelope_size: 'small',
+            envelope_price: 25,
+
+            orientation: 'portrait',
+            pages_count: 8,
+            
+            cover_paper: 'p6',
+            cover_color: '4_4',
+            cover_lamination: 'none',
+            cover_toner: 'none',
+            cover_toner_usd: 0,
+            cover_plotter_cut: 'none',
+            
+            block_paper: 'p3',
+            block_color: '4_4',
+            block_lamination: 'none',
+            block_toner: 'none',
+            block_toners_usd: 0, 
+            
+            back_cover_paper: 'p6',
+            back_cover_color: '0_0',
+            back_cover_lamination: 'none',
+            back_cover_toner: 'none',
+            back_cover_toner_usd: 0,
+            back_cover_plotter_cut: 'none',
+
+            presentation_type: 'presentation',
+            binding_edge: 'long',
+
+            presentation_blocks: [
+                { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
+            ],
+
+            cut_type: 'double',
+            plotter_cut: 'none', 
+            round_corners: false,
+            
+            custom_paper_price: 100,
+            custom_paper_width: 450,
+            custom_paper_height: 320,
+
+            custom_width: 90,
+            custom_height: 50,
+            
+            toner1: 'none',
+            toner1_usd: 0,
+            
+            add_extra_run: false,
+            toner2: 'none',
+            toner2_usd: 0
+        },
+        goods: {
+            'business-card': { name: 'Визитка' },
+            'leaflet': { name: 'Листовка' },
+            'brochure': { name: 'Брошюра' },
+            'presentation': { name: 'Презентации и блокноты' },
+            'envelope': { name: 'Конверт' },
+            'sticker': { name: 'Стикерпак / Наклейка' }
+        },
+        colors: {
+            '4_0': { name: '4+0' },
+            '4_1': { name: '4+1' }, 
+            '4_4': { name: '4+4' },
+            '1_0': { name: '1+0' },
+            '1_1': { name: '1+1' },
+            '0_0': { name: '0+0 (Без печати)' }
+        },
+        toners: {
+            'none': { name: 'Без спецтонера' },
+            'pink': { name: 'PX500 Pink Toner' },
+            'clear': { name: 'PX500 Clear Toner' },
+            'low_gloss': { name: 'PX500 Low Gloss Clear Toner' }
+        },
+        papers: {
+            'p1': { name: 'Мел. матовая 90 г/кв.м. SRA3', price: 10, w: 450, h: 320 },
+            'p2': { name: 'Мел. матовая 115 г/кв.м. SRA3', price: 21, w: 450, h: 320 },
+            'p3': { name: 'Мел. матовая 130 г/кв.м. SRA3', price: 24, w: 450, h: 320 },
+            'p4': { name: 'Мел. матовая 150 г/кв.м. SRA3', price: 28, w: 450, h: 320 },
+            'p5': { name: 'Мел. матовая 170 г/кв.м. SRA3', price: 31, w: 450, h: 320 },
+            'p6': { name: 'Мел. матовая 200 г/кв.м. SRA3', price: 37, w: 450, h: 320 },
+            'p7': { name: 'Мел. матовая 250 г/кв.м. SRA3', price: 46, w: 450, h: 320 },
+            'p8': { name: 'Мел. матовая 300 г/кв.м. SRA3', price: 55, w: 450, h: 320 },
+            'p9': { name: 'Мел. матовая 350 г/кв.м. SR A3', price: 80, w: 450, h: 320 },
+            'p10': { name: 'Мел. глянцевая 130 г/кв.м. SRA3', price: 24, w: 450, h: 320 },
+            'p11': { name: 'Мел. глянцевая 150 г/кв.м. SRA3', price: 28, w: 450, h: 320 },
+            'p12': { name: 'Мел. глянцевая 170 г/кв.м. SRA3', price: 31, w: 450, h: 320 },
+            'p13': { name: 'Мел. глянцевая 200 г/кв.м. SRA3', price: 37, w: 450, h: 320 },
+            'p14': { name: 'Мел. глянцевая 250 г/кв.м. SRA3', price: 46, w: 450, h: 320 },
+            'p15': { name: 'Мел. глянцевая 300 г/кв.м. SRA3', price: 55, w: 450, h: 320 },
+            'p16': { name: 'Офсетная 80 г/кв.м. 330х450', price: 15, w: 450, h: 330 },
+            'p17': { name: 'Офсетная 80 г/кв.м. 330х615', price: 17.50, w: 615, h: 330 },
+            'p18': { name: 'Офсетная 100 г/кв.м. 320х450', price: 18, w: 450, h: 330 },
+            'p19': { name: 'Офсетная 120 г/кв.м. 320х450', price: 25, w: 450, h: 330 },
+            'p20': { name: 'Офсетная 150 г/кв.м. 330х450', price: 41, w: 450, h: 330 },
+            'p21': { name: 'Офсетная 170 г/кв.м. SRA3', price: 50, w: 450, h: 320 },
+            'p22': { name: 'Офсетная 190 г/кв.м. SRA3', price: 55, w: 450, h: 320 },
+            'p23': { name: 'Офсетная 250 г/кв.м. SRA3', price: 73, w: 450, h: 330 },
+            'p24': { name: 'Офсетная 300 г/кв.м. SRA3', price: 85, w: 450, h: 320 },
+            'p25': { name: 'Лён белый 120 г/кв.м. SRA3', price: 57.50, w: 450, h: 320 },
+            'p26': { name: 'Лён белый 300 г/кв.м. SRA3', price: 245, w: 450, h: 320 },
+            'p27': { name: 'Лён бежевый 300 г/кв.м. SRA3', price: 245, w: 450, h: 320 },
+            'p28': { name: 'Tintoretto Crema 250 г/кв.м. SRA3', price: 200, w: 450, h: 320 },
+            'p29': { name: 'Pergraphica 300 г/кв.м SRA3', price: 170, w: 450, h: 320 },
+            'p30': { name: 'Pergraphica 90 г/кв.м SRA3', price: 78, w: 450, h: 320 },
+            'p31': { name: 'Splendorgel Avorio 300 г/кв.м. SRA3', price: 200, w: 450, h: 320 },
+            'p32': { name: 'Splendorgel Avorio 100 г/кв.м. SRA3', price: 50, w: 450, h: 320 },
+            'p33': { name: 'Sirio Oyster Shell 300 г/кв.м. SRA3', price: 300, w: 450, h: 320 },
+            'p34': { name: 'Sirio Polar 300 г/кв.м. SRA3', price: 300, w: 450, h: 320 },
+            'p35': { name: 'Sirio Ice White 300 г/кв.м. SRA3', price: 300, w: 450, h: 320 },
+            'p36': { name: 'Рафлатак (самоклейка бумажная) SRA3', price: 100, w: 450, h: 320 },
+            'p37': { name: 'Jac Datapol (синтетическая самоклейка)', price: 420, w: 450, h: 320 },
+            'p38': { name: 'Color Copy 120 г/кв.м. SRA3', price: 42.60, w: 450, h: 320 },
+            'p39': { name: 'Color Copy 160 г/кв.м. SRA3', price: 56, w: 450, h: 320 },
+            'p40': { name: 'Color Copy 250 г/кв.м. SRA3', price: 89.60, w: 450, h: 320 },
+            'p41': { name: 'Color Copy 300 г/кв.м. SRA3', price: 120, w: 450, h: 320 },
+            'p42': { name: 'Картон 260 г/кв.м. 330х488', price: 50, w: 488, h: 330 },
+            'p43': { name: 'Картон 250 г/кв.м. 330х660', price: 65.55, w: 660, h: 330 },
+            'p44': { name: 'Картон 295 г/кв.м. 330х660', price: 110, w: 660, h: 330 },
+            'p45': { name: 'Мел. матовая 130 г/кв.м. 330х660', price: 26, w: 660, h: 330 },
+            'p46': { name: 'Мел. матовая 150 г/кв.м. 330х660', price: 30, w: 660, h: 330 },
+            'p47': { name: 'Мел. матовая 150 г/кв.м. 330x488', price: 22, w: 488, h: 330 },
+            'p48': { name: 'Мел. матовая 170 г/кв.м. 330х488', price: 27.60, w: 488, h: 330 },
+            'p49': { name: 'Мел. матовая 200 г/кв.м. 330х488', price: 39, w: 488, h: 330 },
+            'p50': { name: 'Мел. матовая 200 г/кв.м. 330х660', price: 52, w: 660, h: 330 },
+            'p51': { name: 'Мел. матовая 250 г/кв.м. 330х488', price: 50, w: 488, h: 330 },
+            'p52': { name: 'Мел. матовая 300 г/кв.м. 330х488', price: 60, w: 488, h: 330 },
+            'p53': { name: 'Мел. матовая 300 г/кв.м. 330х660', price: 80, w: 660, h: 330 },
+            'p54': { name: 'Мел. глянцевая 130 г/кв.м. 330х660', price: 30, w: 660, h: 330 },
+            'p55': { name: 'Woodstock Betulla 260 г/кв.м. SRA3', price: 175, w: 450, h: 320 },
+            'p56': { name: 'Woodstock Betulla 140 г/кв.м. SRA3', price: 100, w: 450, h: 320 },
+            'p57': { name: 'Materica Gesso 120 г/кв.м. SRA3', price: 150, w: 450, h: 320 },
+            'p58': { name: 'Mat. Limestone 120 г/кв.м. SRA3', price: 100, w: 450, h: 320 },
+            'p59': { name: 'Mat. Limestone 180 г/кв.м. 330x660', price: 150, w: 660, h: 330 },
+            'p60': { name: 'Mat. Limestone 250 г/кв.м. 330x488', price: 200, w: 488, h: 330 },
+            'p61': { name: 'Nettuno Panna 280 г/кв.м. SRA3', price: 275, w: 450, h: 320 },
+            'p62': { name: 'Полилит 250 мкр (синтетическая)', price: 225, w: 450, h: 320 },
+            'p63': { name: 'Полилит цифровой 200 мкр (синтетическая)', price: 420, w: 450, h: 320 },
+            'p64': { name: 'Ozon Ivory 80 г/кв.м. SRA3', price: 13, w: 450, h: 320 },
+            'p65': { name: 'Ozon Ivory 100 г/кв.м. SRA3', price: 16, w: 450, h: 320 },
+            'p66': { name: 'Ozon Ivory 120 г/кв.м. SRA3', price: 24, w: 450, h: 320 },
+            'p67': { name: 'Ozon Ivory 150 г/кв.м. SRA3', price: 30, w: 450, h: 320 }
+        },
+        sizes: {
+            leaflet: {
+                'a3': { name: 'A3 (297 x 420 мм)', w: 297, h: 420 },
+                'a4': { name: 'A4 (210 x 297 мм)', w: 210, h: 297 },
+                'a5': { name: 'A5 (148 x 210 мм)', w: 148, h: 210 },
+                'a6': { name: 'A6 (105 x 148 мм)', w: 105, h: 148 },
+                'a7': { name: 'A7 (74 x 105 мм)', w: 74, h: 105 },
+                'euro': { name: 'Евро (99 x 210 мм)', w: 99, h: 210 },
+                'custom': { name: 'Свой размер', w: 0, h: 0 }
+            },
+            sticker: {
+                'a4': { name: 'A4 (210 x 297 мм)', w: 210, h: 297 },
+                'a5': { name: 'A5 (148 x 210 мм)', w: 148, h: 210 },
+                'a6': { name: 'A6 (105 x 148 мм)', w: 105, h: 148 },
+                'custom': { name: 'Свой размер', w: 0, h: 0 }
+            },
+            brochure: {
+                'a4': { name: 'A4 (210 x 297 мм)', w: 210, h: 297 },
+                'a5': { name: 'A5 (148 x 210 мм)', w: 148, h: 210 },
+                'a6': { name: 'A6 (105 x 148 мм)', w: 105, h: 148 },
+                'a7': { name: 'A7 (74 x 105 мм)', w: 74, h: 105 }
+            }
+        }
+    },
+    computed: {
+        laminations: function() {
+            let c = this.config;
+            return {
+                'none': { name: 'Без припресса / ламинации', price: 0 },
+                'press_matt_1_0': { name: 'Матовый припресс 1+0', price: c.press_matt_sra3 },
+                'press_matt_1_1': { name: 'Матовый припресс 1+1', price: c.press_matt_sra3 * 2 },
+                'press_gl_1_0': { name: 'Глянцевый припресс 1+0', price: c.press_gl_sra3 },
+                'press_gl_1_1': { name: 'Глянцевый припресс 1+1', price: c.press_gl_sra3 * 2 },
+                'press_touch_1_0': { name: 'Тач припресс 1+0', price: c.press_touch_sra3 },
+                'press_touch_1_1': { name: 'Тач припресс 1+1', price: c.press_touch_sra3 * 2 },
+                'lam_matt100': { name: 'Матовая ламинация 100 мкр', price: c.lam_matt100 },
+                'lam_gl100': { name: 'Глянцевая ламинация 100 мкр', price: c.lam_gl100 },
+                'lam_matt150': { name: 'Матовая ламинация 150 мкр', price: c.lam_matt150 },
+                'lam_gl150': { name: 'Глянцевая ламинация 150 мкр', price: c.lam_gl150 }
+            };
+        },
+        available_laminations: function() {
+            let res = {};
+            for (let key in this.laminations) {
+                if (this.selected.good === 'sticker') {
+                    if (key === 'none' || key.endsWith('_1_0')) {
+                        res[key] = this.laminations[key];
+                    }
+                } else {
+                    res[key] = this.laminations[key];
+                }
+            }
+            return res;
+        },
+
+        brochure_laminations: function() {
+            let res = {};
+            for (let key in this.laminations) {
+                if (key === 'none' || key.startsWith('press_')) {
+                    res[key] = this.laminations[key];
+                }
+            }
+            return res;
+        },
+        
+        hasCustomBlockPaper: function() {
+            for(let b of this.selected.presentation_blocks) {
+                if(b.paper === 'custom') return true;
+            }
+            return false;
+        },
+
+        layout: function() {
+            let res = { base: {yield: 1}, cover: {yield: 1}, block: {yield: 1}, presentation: {cover_yield: 1, back_cover_yield: 1, blocks_yield: []}, svg: {paperW: 450, paperH: 320, items: []} };
+            
+            if (this.selected.good === 'envelope') {
+                res.base.yield = 1;
+                return res;
+            }
+
+            // Умный расчет дозаливок
+            let isSingleCut = (this.selected.good === 'business-card' || this.selected.good === 'leaflet' || this.selected.good === 'sticker') && this.selected.cut_type === 'single';
+            
+            let gapX = 0;
+            let gapY = 0;
+            let outer = 0;
+
+            if (!isSingleCut) {
+                outer = this.config.bleeds / 2; // 3 мм внешние вылеты
+                gapY = this.config.bleeds / 2;  // 3 мм вертикальные раздвижки (между рядами)
+                
+                if (this.selected.good === 'business-card') {
+                    gapX = this.config.bleeds / 2; // 3 мм боковые раздвижки для визиток
+                } else {
+                    gapX = 5; // 5 мм боковые раздвижки для всего остального
+                }
+            }
+
+            if (this.selected.good !== 'brochure' && this.selected.good !== 'presentation') {
+                let paper = this.getPaperDef(this.selected.paper);
+                if (this.isLaminated(this.selected.lamination)) { paper.w = 420; paper.h = 297; }
+                let item = this.getItemSize();
+                let calcRes = this.calcYieldDetailed(item.w, item.h, paper.w, paper.h, gapX, gapY, outer);
+                res.base.yield = calcRes.yield;
+                res.svg = { paperW: paper.w, paperH: paper.h, items: calcRes.items };
+                return res;
+            }
+
+            if (this.selected.good === 'presentation') {
+                let isLandscape = this.selected.orientation === 'landscape';
+                let pageW = this.sizes.leaflet[this.selected.size].w;
+                let pageH = this.sizes.leaflet[this.selected.size].h;
+                
+                let w = isLandscape ? pageH : pageW;
+                let h = isLandscape ? pageW : pageH;
+
+                let cPaper = this.getPaperDef(this.selected.cover_paper);
+                if (this.isLaminated(this.selected.cover_lamination)) { cPaper.w = 420; cPaper.h = 297; }
+                res.presentation.cover_yield = this.calcYield(w, h, cPaper.w, cPaper.h, gapX, gapY, outer);
+
+                let bcPaper = this.getPaperDef(this.selected.back_cover_paper);
+                if (this.isLaminated(this.selected.back_cover_lamination)) { bcPaper.w = 420; bcPaper.h = 297; }
+                res.presentation.back_cover_yield = this.calcYield(w, h, bcPaper.w, bcPaper.h, gapX, gapY, outer);
+
+                for (let b of this.selected.presentation_blocks) {
+                    let bPaper = this.getPaperDef(b.paper);
+                    if (this.isLaminated(b.lamination)) { bPaper.w = 420; bPaper.h = 297; }
+                    res.presentation.blocks_yield.push(this.calcYield(w, h, bPaper.w, bPaper.h, gapX, gapY, outer));
+                }
+                return res;
+            }
+
+            let isLandscape = this.selected.orientation === 'landscape';
+            let pageW = this.sizes.brochure[this.selected.size].w;
+            let pageH = this.sizes.brochure[this.selected.size].h;
+            
+            let spreadW = isLandscape ? pageH * 2 : pageW * 2;
+            let spreadH = isLandscape ? pageW : pageH;
+
+            let coverPaper = this.getPaperDef(this.selected.cover_paper);
+            if (this.isLaminated(this.selected.cover_lamination)) { coverPaper.w = 420; coverPaper.h = 297; }
+            res.cover.yield = this.calcYield(spreadW, spreadH, coverPaper.w, coverPaper.h, gapX, gapY, outer);
+
+            let blockPaper = this.getPaperDef(this.selected.block_paper);
+            if (this.isLaminated(this.selected.block_lamination)) { blockPaper.w = 420; blockPaper.h = 297; }
+            res.block.yield = this.calcYield(spreadW, spreadH, blockPaper.w, blockPaper.h, gapX, gapY, outer);
+
+            return res;
+        },
+        
+        result_price: function () {
+            let profitMultiplier = this.selected.good === 'business-card' ? this.config.profit_business_card : this.config.profit_per_one;
+            let doesNotFit = false;
+
+            // Базовый прогон для расчета тонеров
+            let runCostForToner = 0;
+            if (this.selected.good === 'envelope') {
+                runCostForToner = this.getBaseRunCost(null, true);
+            } else if (this.selected.good === 'brochure' || this.selected.good === 'presentation') {
+                runCostForToner = this.getBaseRunCost(this.getPaperDef(this.selected.cover_paper), false);
+            } else {
+                runCostForToner = this.getBaseRunCost(this.getPaperDef(this.selected.paper), false);
+            }
+
+            // Математика 5-го цвета (только прогоны, доллары накинем в конце)
+            let toner1_runs_cost = 0;
+            let toner1_usd_lump = 0;
+            if (this.selected.toner1 !== 'none') {
+                toner1_runs_cost = runCostForToner * 2;
+                toner1_usd_lump = (Number(this.selected.toner1_usd) || 0) * this.config.usd_rate;
+            }
+
+            let extra_run_cost = 0;
+            let toner2_runs_cost = 0;
+            let toner2_usd_lump = 0;
+            if (this.selected.add_extra_run) {
+                if (this.selected.toner2 !== 'none') {
+                    toner2_runs_cost = runCostForToner * 2;
+                    toner2_usd_lump = (Number(this.selected.toner2_usd) || 0) * this.config.usd_rate;
+                } else {
+                    extra_run_cost = runCostForToner;
+                }
+            }
+
+            let productionCost = 0, totalPapersCount = 0;
+            let paperPrice = 0, colorPrice = 0, laminationPrice = 0, plotterCost = 0, totalCostPerSheet = 0;
+            let coverSheets = 0, blockSheets = 0, coverCostPerSheet = 0, blockCostPerSheet = 0;
+            let coverPaperPrice = 0, coverColorPrice = 0, coverLaminationPrice = 0, coverPlotterCost = 0;
+            let blockPaperPrice = 0, blockColorPrice = 0, blockLaminationPrice = 0;
+            
+            let block_toners_lump = 0;
+            let blockRunCost = 0;
+            let block_toners_usd_converted = 0;
+            let block_toners_runs_cost = 0;
+            
+            let presDetails = {};
+
+            let roundCornersCostPrice = 0;
+            if (this.selected.round_corners) {
+                roundCornersCostPrice = this.config.selling_round_corners_price / (this.config.tax * profitMultiplier);
+            }
+
+            if (this.selected.good === 'envelope') {
+                let sheets = this.selected.circulation;
+                totalPapersCount = sheets;
+                
+                paperPrice = Number(this.selected.envelope_price) || 0;
+                colorPrice = this.getColorPrice(this.selected.color, null, true);
+                
+                totalCostPerSheet = paperPrice + colorPrice + laminationPrice + toner1_runs_cost + extra_run_cost + toner2_runs_cost;
+                productionCost = (sheets * totalCostPerSheet) + toner1_usd_lump + toner2_usd_lump;
+            } 
+            else if (this.selected.good === 'presentation') {
+                let yCover = this.layout.presentation.cover_yield || 1;
+                let yBack = this.layout.presentation.back_cover_yield || 1;
+                if (this.layout.presentation.cover_yield === 0 || this.layout.presentation.back_cover_yield === 0) doesNotFit = true;
+
+                let coverSheets = Math.ceil(this.selected.circulation / yCover);
+                let backSheets = Math.ceil(this.selected.circulation / yBack);
+
+                // --- Фронтальная обложка ---
+                let cPaperDef = this.getPaperDef(this.selected.cover_paper);
+                let cPaperPrice = this.selected.cover_paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.cover_paper].price;
+                let cColorPrice = this.getColorPrice(this.selected.cover_color, cPaperDef, false);
+                let cLamPrice = this.getLamPrice(this.selected.cover_lamination, cPaperDef, false);
+
+                let cRunCost = this.getBaseRunCost(cPaperDef, false);
+                let cTonerRunsCost = this.selected.cover_toner !== 'none' ? cRunCost * 2 : 0;
+                let cTonerUsdLump = this.selected.cover_toner !== 'none' ? (Number(this.selected.cover_toner_usd) || 0) * this.config.usd_rate : 0;
+
+                let cPlotterCost = 0;
+                if (this.selected.cover_plotter_cut === 'plotter') cPlotterCost = this.config.plotter_sra3 * this.getLenFactor(cPaperDef);
+                if (this.selected.cover_plotter_cut === 'plotter_perf') cPlotterCost = this.config.plotter_perf_sra3 * this.getLenFactor(cPaperDef);
+
+                let coverCostPerSheet = cPaperPrice + cColorPrice + cLamPrice + cTonerRunsCost + cPlotterCost;
+                let totalCoverCost = (coverSheets * coverCostPerSheet) + cTonerUsdLump;
+
+                // --- Задняя обложка ---
+                let bcPaperDef = this.getPaperDef(this.selected.back_cover_paper);
+                let bcPaperPrice = this.selected.back_cover_paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.back_cover_paper].price;
+                let bcColorPrice = this.getColorPrice(this.selected.back_cover_color, bcPaperDef, false);
+                let bcLamPrice = this.getLamPrice(this.selected.back_cover_lamination, bcPaperDef, false);
+
+                let bcRunCost = this.getBaseRunCost(bcPaperDef, false);
+                let bcTonerRunsCost = this.selected.back_cover_toner !== 'none' ? bcRunCost * 2 : 0;
+                let bcTonerUsdLump = this.selected.back_cover_toner !== 'none' ? (Number(this.selected.back_cover_toner_usd) || 0) * this.config.usd_rate : 0;
+
+                let bcPlotterCost = 0;
+                if (this.selected.back_cover_plotter_cut === 'plotter') bcPlotterCost = this.config.plotter_sra3 * this.getLenFactor(bcPaperDef);
+                if (this.selected.back_cover_plotter_cut === 'plotter_perf') bcPlotterCost = this.config.plotter_perf_sra3 * this.getLenFactor(bcPaperDef);
+
+                let backCostPerSheet = bcPaperPrice + bcColorPrice + bcLamPrice + bcTonerRunsCost + bcPlotterCost;
+                let totalBackCost = (backSheets * backCostPerSheet) + bcTonerUsdLump;
+
+                // --- Внутренние блоки ---
+                let totalBlocksCost = 0;
+                let totalPresSheetsPerItem = 2; // Передняя и задняя обложка
+                let blockSheetsCount = 0;
+
+                for (let i = 0; i < this.selected.presentation_blocks.length; i++) {
+                    let b = this.selected.presentation_blocks[i];
+                    let yBlock = this.layout.presentation.blocks_yield[i] || 1;
+                    if (this.layout.presentation.blocks_yield[i] === 0) doesNotFit = true;
+
+                    let itemsNeeded = this.selected.circulation * b.sheets;
+                    let bSra3Sheets = Math.ceil(itemsNeeded / yBlock);
+                    blockSheetsCount += bSra3Sheets;
+                    totalPresSheetsPerItem += Number(b.sheets);
+
+                    let bPaperDef = this.getPaperDef(b.paper);
+                    let bPaperPrice = b.paper === 'custom' ? this.selected.custom_paper_price : this.papers[b.paper].price;
+                    let bColorPrice = this.getColorPrice(b.color, bPaperDef, false);
+                    let bLamPrice = this.getLamPrice(b.lamination, bPaperDef, false);
+
+                    let bRunC = this.getBaseRunCost(bPaperDef, false);
+                    let bTonerRunsC = b.toner !== 'none' ? bRunC * 2 : 0;
+                    let bTonerUsdLump = b.toner !== 'none' ? (Number(b.toner_usd) || 0) * this.config.usd_rate : 0;
+
+                    let bCostPerSheet = bPaperPrice + bColorPrice + bLamPrice + bTonerRunsC;
+                    totalBlocksCost += (bSra3Sheets * bCostPerSheet) + bTonerUsdLump;
+                }
+
+                // --- Сборка на пружину ---
+                let bindCostPerItem = 500 + Math.max(0, totalPresSheetsPerItem - 20) * 1;
+                let totalBindCost = bindCostPerItem * this.selected.circulation;
+
+                productionCost = totalCoverCost + totalBackCost + totalBlocksCost + totalBindCost;
+                totalPapersCount = coverSheets + backSheets + blockSheetsCount;
+
+                presDetails = {
+                    coverSheets: coverSheets, coverCostPerSheet: Math.round(coverCostPerSheet), cTonerUsdLump: Math.round(cTonerUsdLump), coverPlotterCost: Math.round(cPlotterCost),
+                    backSheets: backSheets, backCostPerSheet: Math.round(backCostPerSheet), bcTonerUsdLump: Math.round(bcTonerUsdLump), backPlotterCost: Math.round(bcPlotterCost),
+                    totalBlocksCost: Math.round(totalBlocksCost), blockSra3Sheets: blockSheetsCount,
+                    bindCostPerItem: Math.round(bindCostPerItem), totalBindCost: Math.round(totalBindCost)
+                };
+            }
+            else if (this.selected.good !== 'brochure') {
+                let y = this.layout.base.yield || 1;
+                if (this.layout.base.yield === 0) doesNotFit = true;
+                
+                let sheets = Math.ceil(this.selected.circulation / y);
+                totalPapersCount = sheets;
+                
+                let paperDef = this.getPaperDef(this.selected.paper);
+                paperPrice = this.selected.paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.paper].price;
+                colorPrice = this.getColorPrice(this.selected.color, paperDef, false);
+                laminationPrice = this.getLamPrice(this.selected.lamination, paperDef, false);
+
+                if (this.selected.good === 'leaflet' || this.selected.good === 'sticker') {
+                    if (this.selected.plotter_cut === 'plotter') plotterCost = this.config.plotter_sra3 * this.getLenFactor(paperDef);
+                    if (this.selected.plotter_cut === 'plotter_perf') plotterCost = this.config.plotter_perf_sra3 * this.getLenFactor(paperDef);
+                }
+                
+                totalCostPerSheet = paperPrice + colorPrice + laminationPrice + toner1_runs_cost + extra_run_cost + toner2_runs_cost + plotterCost;
+                productionCost = (sheets * totalCostPerSheet) + toner1_usd_lump + toner2_usd_lump + (this.selected.circulation * roundCornersCostPrice);
+            } 
+            else {
+                if (this.layout.cover.yield === 0) doesNotFit = true;
+                if (this.selected.pages_count > 4 && this.layout.block.yield === 0) doesNotFit = true;
+                
+                let yCover = this.layout.cover.yield || 1;
+                let yBlock = this.layout.block.yield || 1;
+
+                coverSheets = Math.ceil(this.selected.circulation / yCover);
+                blockSheets = Math.ceil((this.selected.circulation * ((this.selected.pages_count - 4) / 4)) / yBlock);
+                totalPapersCount = coverSheets + blockSheets;
+
+                let coverPaperDef = this.getPaperDef(this.selected.cover_paper);
+                let blockPaperDef = this.getPaperDef(this.selected.block_paper);
+
+                coverPaperPrice = this.selected.cover_paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.cover_paper].price;
+                blockPaperPrice = this.selected.block_paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.block_paper].price;
+                
+                coverColorPrice = this.getColorPrice(this.selected.cover_color, coverPaperDef, false);
+                blockColorPrice = this.getColorPrice(this.selected.block_color, blockPaperDef, false);
+                
+                coverLaminationPrice = this.getLamPrice(this.selected.cover_lamination, coverPaperDef, false);
+                blockLaminationPrice = this.getLamPrice(this.selected.block_lamination, blockPaperDef, false);
+
+                if (this.selected.cover_plotter_cut === 'plotter') coverPlotterCost = this.config.plotter_sra3 * this.getLenFactor(coverPaperDef);
+                if (this.selected.cover_plotter_cut === 'plotter_perf') coverPlotterCost = this.config.plotter_perf_sra3 * this.getLenFactor(coverPaperDef);
+
+                coverCostPerSheet = coverPaperPrice + coverColorPrice + coverLaminationPrice + toner1_runs_cost + extra_run_cost + toner2_runs_cost + coverPlotterCost;
+                blockCostPerSheet = blockPaperPrice + blockColorPrice + blockLaminationPrice;
+
+                // Спецтонер для блока
+                if (this.selected.block_toner !== 'none') {
+                    blockRunCost = this.getBaseRunCost(blockPaperDef, false);
+                    block_toners_usd_converted = (Number(this.selected.block_toners_usd) || 0) * this.config.usd_rate;
+                    block_toners_runs_cost = blockSheets * blockRunCost * 2;
+                    block_toners_lump = block_toners_usd_converted + block_toners_runs_cost;
+                }
+
+                productionCost = (coverSheets * coverCostPerSheet) + toner1_usd_lump + toner2_usd_lump + (blockSheets * blockCostPerSheet) + block_toners_lump;
+            }
+            
+            let productionCostWithTax = productionCost * this.config.tax;
+            let costPerPiece = productionCost / this.selected.circulation;
+            let unitPrice = Math.ceil((costPerPiece * this.config.tax) * profitMultiplier);
+            let totalPrice = unitPrice * this.selected.circulation;
+
+            return {
+                doesNotFit: doesNotFit,
+                one_total: doesNotFit ? 0 : Math.round(unitPrice),
+                total: doesNotFit ? 'НЕ ПОМЕЩАЕТСЯ' : Math.round(totalPrice),
+                productionCost: Math.round(productionCost),
+                productionCostWithTax: Math.round(productionCostWithTax),
+                totalPapersCount: totalPapersCount,
+                
+                paperPrice: Math.round(paperPrice),
+                colorPrice: Math.round(colorPrice),
+                laminationPrice: Math.round(laminationPrice),
+                totalCostPerSheet: Math.round(totalCostPerSheet),
+                plotterCost: Math.round(plotterCost),
+                
+                coverSheets: coverSheets,
+                blockSheets: blockSheets,
+                coverCostPerSheet: Math.round(coverCostPerSheet),
+                blockCostPerSheet: Math.round(blockCostPerSheet),
+                coverPaperPrice: Math.round(coverPaperPrice),
+                coverColorPrice: Math.round(coverColorPrice),
+                coverLaminationPrice: Math.round(coverLaminationPrice),
+                coverPlotterCost: Math.round(coverPlotterCost),
+                blockPaperPrice: Math.round(blockPaperPrice),
+                blockColorPrice: Math.round(blockColorPrice),
+                blockLaminationPrice: Math.round(blockLaminationPrice),
+
+                toner1_runs_cost: Math.round(toner1_runs_cost),
+                toner1_usd_lump: Math.round(toner1_usd_lump),
+                extra_run_cost: Math.round(extra_run_cost),
+                toner2_runs_cost: Math.round(toner2_runs_cost),
+                toner2_usd_lump: Math.round(toner2_usd_lump),
+                
+                block_toners_runs_cost: Math.round(block_toners_runs_cost),
+                block_toners_usd_converted: Math.round(block_toners_usd_converted),
+                block_toners_cost: Math.round(block_toners_lump),
+                
+                pres: presDetails
+            };
+        },
+
+        delivery_time: function() {
+            let good = this.selected.good;
+            let circ = Number(this.selected.circulation) || 0;
+            let minDays = 1, maxDays = 3;
+
+            if (good === 'brochure' || good === 'presentation') {
+                minDays = 3; 
+                maxDays = 5;
+                let addDays = Math.floor(circ / 100);
+                minDays += addDays; 
+                maxDays += addDays;
+            } else if (good === 'envelope') {
+                minDays = 3; 
+                maxDays = 5;
+                let addDays = Math.floor(circ / 500);
+                minDays += addDays; 
+                maxDays += addDays;
+            } else if (good === 'leaflet' || good === 'sticker') {
+                if (this.selected.plotter_cut === 'plotter') {
+                    let addDays = Math.floor(circ / 100);
+                    minDays += addDays; 
+                    maxDays += addDays;
+                } else if (this.selected.plotter_cut === 'plotter_perf') {
+                    let addDays = Math.floor(circ / 100) * 2;
+                    minDays += addDays; 
+                    maxDays += addDays;
+                }
+            }
+
+            // Накидываем дни за припресс/ламинацию (1-2 дня базы + 1 день за каждые 500 шт)
+            let hasLam = false;
+            if (good === 'presentation') {
+                if (this.selected.cover_lamination !== 'none' || this.selected.back_cover_lamination !== 'none') hasLam = true;
+                for (let b of this.selected.presentation_blocks) {
+                    if (b.lamination !== 'none') hasLam = true;
+                }
+            } else if (good === 'brochure') {
+                if (this.selected.cover_lamination !== 'none' || this.selected.block_lamination !== 'none') hasLam = true;
+            } else {
+                if (this.selected.lamination && this.selected.lamination !== 'none') hasLam = true;
+            }
+
+            if (hasLam) {
+                let lamAdd = Math.floor(circ / 500);
+                minDays += 1 + lamAdd;
+                maxDays += 2 + lamAdd;
+            }
+
+            // Доп дни за спецтонеры и плоттер (брошюра/презентация)
+            if (this.selected.toner1 !== 'none') {
+                minDays += 2; 
+                maxDays += 3;
+            }
+            if (this.selected.add_extra_run && this.selected.toner2 !== 'none') {
+                minDays += 2; 
+                maxDays += 3;
+            }
+            if ((good === 'brochure' || good === 'presentation') && 
+                (this.selected.cover_plotter_cut !== 'none' || (this.selected.back_cover_plotter_cut && this.selected.back_cover_plotter_cut !== 'none'))) {
+                minDays += 1;
+                maxDays += 2;
+            }
+
+            return minDays + '-' + maxDays;
+        },
+        
+        spec_size: function() {
+            if (this.selected.good === 'envelope') {
+                return 'Конверт (' + (this.selected.envelope_size === 'small' ? 'До С4 включительно' : 'Больше С4') + ')';
+            } else if (this.selected.good === 'business-card' || ((this.selected.good === 'leaflet' || this.selected.good === 'sticker') && this.selected.size === 'custom')) {
+                return this.selected.custom_width + 'x' + this.selected.custom_height + ' мм';
+            } else if (this.selected.good === 'brochure') {
+                return this.sizes.brochure[this.selected.size].name + ' (' + (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + this.selected.pages_count + ' стр. (включая обложку)';
+            } else if (this.selected.good === 'presentation') {
+                let sCount = 2; // обложки
+                for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets);
+                return this.sizes.leaflet[this.selected.size].name + ' (' + (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + sCount + ' листов';
+            } else {
+                return this.sizes[this.selected.good][this.selected.size].name;
+            }
+        },
+        spec_paper: function() {
+            return this.getPaperName(this.selected.paper);
+        }
+    },
+    methods: {
+        addBlock: function() {
+            this.selected.presentation_blocks.push({
+                id: this.blockIdCounter++,
+                sheets: 20,
+                paper: 'p16',
+                color: '4_4',
+                lamination: 'none',
+                toner: 'none',
+                toner_usd: 0
+            });
+        },
+        removeBlock: function(idx) {
+            this.selected.presentation_blocks.splice(idx, 1);
+        },
+        validatePages: function() {
+            let p = parseInt(this.selected.pages_count);
+            if (!p || p < 4) {
+                this.selected.pages_count = 4;
+            } else if (p % 4 !== 0) {
+                this.selected.pages_count = Math.round(p / 4) * 4;
+                if (this.selected.pages_count < 4) this.selected.pages_count = 4;
+            }
+        },
+        showNotification: function(msg) {
+            this.toastMessage = msg;
+            this.showToast = true;
+            setTimeout(() => {
+                this.showToast = false;
+            }, 2500);
+        },
+        copyTable: function(type) {
+            let el = type === 'table' ? this.$refs.copyTable : this.$refs.copyRow;
+            let range = document.createRange();
+            range.selectNode(el);
+            let sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            try {
+                document.execCommand('copy');
+                this.showNotification(type === 'table' ? 'Вся таблица скопирована в буфер обмена!' : 'Строка с расчетом скопирована в буфер обмена!');
+            } catch (err) {
+                this.showNotification('Не удалось скопировать. Пожалуйста, выделите текст вручную.');
+            }
+            sel.removeAllRanges();
+        },
+        getLenFactor: function(paperDef) {
+            if (!paperDef) return 1;
+            let maxLen = Math.max(paperDef.w, paperDef.h);
+            return Math.max(1, maxLen / 450);
+        },
+        
+        getBaseRunCost: function(paperDef, isEnvelope) {
+            let c = this.config;
+            if (isEnvelope) {
+                return this.selected.envelope_size === 'small' ? c.run_small : c.run_color;
+            }
+            if (!paperDef) return c.run_color;
+
+            let maxLen = Math.max(paperDef.w, paperDef.h);
+            let minLen = Math.min(paperDef.w, paperDef.h);
+
+            // Мелкий формат (А4/А5)
+            if (maxLen <= 330 && minLen <= 225) {
+                return c.run_small;
+            } 
+            // Стандартный формат (включая SRA3 450мм и 330x488мм)
+            else if (maxLen <= 490) {
+                return c.run_color;
+            } 
+            // Длинные форматы (баннеры от 491мм и выше), считаем кликами по ширине А4 (220 мм)
+            else {
+                let clicks = Math.ceil(maxLen / 220); 
+                return c.run_small * clicks; 
+            }
+        },
+        
+        getColorPrice: function(colorKey, paperDef, isEnvelope) {
+            let c = this.config;
+            let run_cost = this.getBaseRunCost(paperDef, isEnvelope);
+
+            if (colorKey === '4_0') return run_cost;
+            if (colorKey === '4_4') return run_cost * 2;
+            if (colorKey === '4_1') return run_cost + c.run_bw;
+            if (colorKey === '1_0') return c.run_bw;
+            if (colorKey === '1_1') return c.run_bw * 2;
+            return 0;
+        },
+        getLamPrice: function(lamKey, paperDef, isEnvelope) {
+            let basePrice = this.laminations[lamKey].price;
+            if (basePrice === 0 || isEnvelope || !paperDef) return basePrice;
+            let factor = this.getLenFactor(paperDef);
+            return basePrice * factor;
+        },
+
+        getPaperName: function(key) {
+            if (key === 'custom') return 'Своя бумага (' + this.selected.custom_paper_width + 'x' + this.selected.custom_paper_height + ' мм)';
+            return this.papers[key] ? this.papers[key].name : '';
+        },
+        getPaperDef: function(key) {
+            if (key === 'custom') return { w: this.selected.custom_paper_width, h: this.selected.custom_paper_height };
+            return { w: this.papers[key].w || 450, h: this.papers[key].h || 320 };
+        },
+        isLaminated: function(lamKey) {
+            return this.laminations[lamKey] ? this.laminations[lamKey].name.toLowerCase().includes('ламинация') : false;
+        },
+        getItemSize: function() {
+            if (this.selected.good === 'business-card' || ((this.selected.good === 'leaflet' || this.selected.good === 'sticker') && this.selected.size === 'custom')) {
+                return { w: this.selected.custom_width, h: this.selected.custom_height };
+            }
+            return { w: this.sizes[this.selected.good][this.selected.size].w, h: this.sizes[this.selected.good][this.selected.size].h };
+        },
+        calcYield: function(netW, netH, paperW, paperH, gapX, gapY, outerBleed) {
+            let usableW = paperW - this.config.margins;
+            let usableH = paperH - this.config.margins;
+            
+            let calcN = (paperUsable, itemNet, currentGap) => {
+                if (paperUsable < itemNet + 2 * outerBleed) return 0;
+                return Math.floor((paperUsable + currentGap - 2 * outerBleed) / (itemNet + currentGap));
+            };
+
+            let opt1 = calcN(usableW, netW, gapX) * calcN(usableH, netH, gapY);
+            let opt2 = calcN(usableW, netH, gapX) * calcN(usableH, netW, gapY);
+            return Math.max(opt1, opt2);
+        },
+        calcYieldDetailed: function(netW, netH, paperW, paperH, gapX, gapY, outerBleed) {
+            let usableW = paperW - this.config.margins;
+            let usableH = paperH - this.config.margins;
+            
+            let calcN = (paperUsable, itemNet, currentGap) => {
+                if (paperUsable < itemNet + 2 * outerBleed) return 0;
+                return Math.floor((paperUsable + currentGap - 2 * outerBleed) / (itemNet + currentGap));
+            };
+
+            let cols1 = calcN(usableW, netW, gapX);
+            let rows1 = calcN(usableH, netH, gapY);
+            let opt1Count = cols1 * rows1;
+
+            let cols2 = calcN(usableW, netH, gapX);
+            let rows2 = calcN(usableH, netW, gapY);
+            let opt2Count = cols2 * rows2;
+
+            let bestCols = cols1, bestRows = rows1, rotated = false;
+            if (opt2Count > opt1Count) {
+                bestCols = cols2;
+                bestRows = rows2;
+                rotated = true;
+            }
+            let maxYield = Math.max(opt1Count, opt2Count);
+
+            let items = [];
+            if (maxYield > 0) {
+                let w = rotated ? netH : netW;
+                let h = rotated ? netW : netH;
+                
+                let blockW = bestCols * w + (bestCols > 0 ? (bestCols - 1) * gapX : 0) + 2 * outerBleed;
+                let blockH = bestRows * h + (bestRows > 0 ? (bestRows - 1) * gapY : 0) + 2 * outerBleed;
+                
+                let startX = (paperW - blockW) / 2 + outerBleed;
+                let startY = (paperH - blockH) / 2 + outerBleed;
+
+                for (let r = 0; r < bestRows; r++) {
+                    for (let c = 0; c < bestCols; c++) {
+                        items.push({
+                            x: startX + c * (w + gapX),
+                            y: startY + r * (h + gapY),
+                            w: w,
+                            h: h
+                        });
+                    }
+                }
+            }
+            return { yield: maxYield, items: items };
+        },
+        setDefaultSize: function () {
+            if (this.sizes[this.selected.good]) {
+                let firstKey = Object.keys(this.sizes[this.selected.good])[0];
+                this.selected.size = firstKey;
+            }
+            
+            this.selected.lamination = 'none';
+            this.selected.cover_lamination = 'none';
+            this.selected.block_lamination = 'none';
+            this.selected.round_corners = false;
+            this.selected.cover_plotter_cut = 'none';
+            this.selected.back_cover_plotter_cut = 'none';
+            
+            this.selected.envelope_size = 'small';
+            this.selected.envelope_price = 25;
+            this.selected.block_toner = 'none';
+            this.selected.block_toners_usd = 0;
+            
+            if (this.selected.good === 'envelope' || this.selected.good === 'sticker') {
+                this.selected.color = '4_0';
+            }
+
+            // Авто-переключение бумаги и плоттера
+            if (this.selected.good === 'sticker') {
+                this.selected.paper = 'p36';
+                this.selected.plotter_cut = 'plotter'; 
+            } else {
+                this.selected.plotter_cut = 'none'; 
+                if (this.selected.paper === 'p36' || this.selected.paper === 'p37') {
+                    this.selected.paper = 'p8';
+                }
+            }
+            
+            if (this.selected.good === 'presentation') {
+                this.selected.size = 'a4';
+                this.selected.orientation = 'landscape';
+                
+                this.selected.cover_paper = 'p8';
+                this.selected.cover_color = '4_0';
+                this.selected.cover_lamination = 'none';
+                this.selected.cover_toner = 'none';
+                this.selected.cover_toner_usd = 0;
+
+                this.selected.back_cover_paper = 'p8';
+                this.selected.back_cover_color = '0_0';
+                this.selected.back_cover_lamination = 'none';
+                this.selected.back_cover_toner = 'none';
+                this.selected.back_cover_toner_usd = 0;
+
+                this.selected.presentation_type = 'presentation';
+                this.selected.binding_edge = 'long';
+
+                this.selected.presentation_blocks = [{
+                    id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0
+                }];
+            }
+            
+            this.selected.toner1 = 'none';
+            this.selected.toner1_usd = 0;
+            
+            this.selected.add_extra_run = false;
+            this.selected.toner2 = 'none';
+            this.selected.toner2_usd = 0;
+        },
+        isNumber: function (evt) {
+            evt = evt || window.event;
+            var charCode = evt.which ? evt.which : evt.keyCode;
+            if ((charCode > 31 && (charCode < 48 || charCode > 57)) && charCode !== 46) evt.preventDefault();
+            else return true;
+        }
+    },
+    filters: {
+        formatNumber: function(value) {
+            if (typeof value === 'string') return value;
+            if (!value) return 0;
+            return Math.round(Number(value));
+        }
+    }
+});
+</script>
+</body>
+</html>
