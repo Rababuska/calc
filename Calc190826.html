@@ -104,8 +104,8 @@
                             <option value="landscape">Альбомная (горизонтальная)</option>
                         </select>
                         <select class="form-control form-control-sm" v-model="selected.binding_edge" v-if="selected.good === 'presentation'">
-                            <option value="long">Пружина по длинной стороне</option>
                             <option value="short">Пружина по короткой стороне</option>
+                            <option value="long">Пружина по длинной стороне</option>
                         </select>
                     </div>
                     <div v-else-if="selected.good === 'envelope'" class="mt-2">
@@ -361,7 +361,6 @@
             </tr>
 
             <tr class="bg-light">
-                
                 <td colspan="2" style="vertical-align: top;">
                     <strong>Раскладка на листе и Себестоимость:</strong><br/>
                     
@@ -525,7 +524,6 @@
                         <h4 class="mb-0" v-else>{{ result_price.total }} тг</h4>
                     </div>
                 </td>
-                
             </tr>
             </tbody>
         </table>
@@ -596,7 +594,7 @@
                                     <span v-for="(b, i) in selected.presentation_blocks" :key="'copy_'+i">
                                         &nbsp;&nbsp;&nbsp;- Блок {{i+1}} ({{b.sheets}} л.): {{ colors[b.color].name }}, {{ laminations[b.lamination].name }}, {{ getPaperName(b.paper) }} <span v-if="b.toner !== 'none'">+ {{ toners[b.toner].name }}</span><br/>
                                     </span>
-                                    Сборка на металлическую пружину ({{ selected.binding_edge === 'long' ? 'по длинной стороне' : 'по короткой стороне' }})<br/>
+                                    Сборка на металлическую пружину ({{ selected.binding_edge === 'short' ? 'по короткой стороне' : 'по длинной стороне' }})<br/>
                                 </span>
 
                                 <span v-if="selected.toner1 !== 'none' && selected.good !== 'presentation'">5-й цвет{{ selected.good === 'brochure' ? ' (Обложка)' : '' }}: {{ toners[selected.toner1].name }}<br/></span>
@@ -619,12 +617,10 @@
                 </table>
             </div>
         </div>
-
     </div>
 </div>
 
 <script>
-// Глобальный компонент для выбора бумаги с поиском
 Vue.component('paper-selector', {
     props: ['value', 'papers', 'isSticker'],
     data: function() {
@@ -696,27 +692,21 @@ var app = new Vue({
             tax: 1.36,
             profit_per_one: 2.3, 
             profit_business_card: 3, 
-            margins: 4,     // Свободный край (по 2 мм с каждой стороны)
-            bleeds: 6,      // Вылеты (по 3 мм на сторону)
-            
+            margins: 4,
+            bleeds: 6,
             usd_rate: 500,
-            
             run_color: 44,
             run_bw: 20,
             run_small: 25,
-            
             press_matt_sra3: 29,
             press_gl_sra3: 27,
             press_touch_sra3: 37,
-            
             lam_matt100: 235,
             lam_gl100: 125,
             lam_matt150: 325,
             lam_gl150: 190,
-            
             plotter_sra3: 150,
             plotter_perf_sra3: 300,
-            
             selling_round_corners_price: 5
         },
         
@@ -726,58 +716,45 @@ var app = new Vue({
             good: 'leaflet',
             size: 'a4',
             circulation: 100,
-            
             color: '4_4',
             lamination: 'none',
             paper: 'p8', 
-            
             envelope_size: 'small',
             envelope_price: 25,
-
             orientation: 'portrait',
             pages_count: 8,
-            
             cover_paper: 'p6',
             cover_color: '4_4',
             cover_lamination: 'none',
             cover_toner: 'none',
             cover_toner_usd: 0,
             cover_plotter_cut: 'none',
-            
             block_paper: 'p3',
             block_color: '4_4',
             block_lamination: 'none',
             block_toner: 'none',
             block_toners_usd: 0, 
-            
             back_cover_paper: 'p6',
             back_cover_color: '0_0',
             back_cover_lamination: 'none',
             back_cover_toner: 'none',
             back_cover_toner_usd: 0,
             back_cover_plotter_cut: 'none',
-
             presentation_type: 'presentation',
-            binding_edge: 'long',
-
+            binding_edge: 'short', // По умолчанию по короткой стороне
             presentation_blocks: [
                 { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
             ],
-
             cut_type: 'double',
             plotter_cut: 'none', 
             round_corners: false,
-            
             custom_paper_price: 100,
             custom_paper_width: 450,
             custom_paper_height: 320,
-
             custom_width: 90,
             custom_height: 50,
-            
             toner1: 'none',
             toner1_usd: 0,
-            
             add_extra_run: false,
             toner2: 'none',
             toner2_usd: 0
@@ -927,7 +904,6 @@ var app = new Vue({
             }
             return res;
         },
-
         brochure_laminations: function() {
             let res = {};
             for (let key in this.laminations) {
@@ -937,14 +913,12 @@ var app = new Vue({
             }
             return res;
         },
-        
         hasCustomBlockPaper: function() {
             for(let b of this.selected.presentation_blocks) {
                 if(b.paper === 'custom') return true;
             }
             return false;
         },
-
         layout: function() {
             let res = { base: {yield: 1}, cover: {yield: 1}, block: {yield: 1}, presentation: {cover_yield: 1, back_cover_yield: 1, blocks_yield: []}, svg: {paperW: 450, paperH: 320, items: []} };
             
@@ -953,7 +927,6 @@ var app = new Vue({
                 return res;
             }
 
-            // Умный расчет дозаливок
             let isSingleCut = (this.selected.good === 'business-card' || this.selected.good === 'leaflet' || this.selected.good === 'sticker') && this.selected.cut_type === 'single';
             
             let gapX = 0;
@@ -961,13 +934,12 @@ var app = new Vue({
             let outer = 0;
 
             if (!isSingleCut) {
-                outer = this.config.bleeds / 2; // 3 мм внешние вылеты
-                gapY = this.config.bleeds / 2;  // 3 мм вертикальные раздвижки (между рядами)
-                
+                outer = this.config.bleeds / 2;
+                gapY = this.config.bleeds / 2;
                 if (this.selected.good === 'business-card') {
-                    gapX = this.config.bleeds / 2; // 3 мм боковые раздвижки для визиток
+                    gapX = this.config.bleeds / 2;
                 } else {
-                    gapX = 5; // 5 мм боковые раздвижки для всего остального
+                    gapX = 5;
                 }
             }
 
@@ -1022,12 +994,10 @@ var app = new Vue({
 
             return res;
         },
-        
         result_price: function () {
             let profitMultiplier = this.selected.good === 'business-card' ? this.config.profit_business_card : this.config.profit_per_one;
             let doesNotFit = false;
 
-            // Базовый прогон для расчета тонеров
             let runCostForToner = 0;
             if (this.selected.good === 'envelope') {
                 runCostForToner = this.getBaseRunCost(null, true);
@@ -1037,7 +1007,6 @@ var app = new Vue({
                 runCostForToner = this.getBaseRunCost(this.getPaperDef(this.selected.paper), false);
             }
 
-            // Математика 5-го цвета (только прогоны, доллары накинем в конце)
             let toner1_runs_cost = 0;
             let toner1_usd_lump = 0;
             if (this.selected.toner1 !== 'none') {
@@ -1078,10 +1047,8 @@ var app = new Vue({
             if (this.selected.good === 'envelope') {
                 let sheets = this.selected.circulation;
                 totalPapersCount = sheets;
-                
                 paperPrice = Number(this.selected.envelope_price) || 0;
                 colorPrice = this.getColorPrice(this.selected.color, null, true);
-                
                 totalCostPerSheet = paperPrice + colorPrice + laminationPrice + toner1_runs_cost + extra_run_cost + toner2_runs_cost;
                 productionCost = (sheets * totalCostPerSheet) + toner1_usd_lump + toner2_usd_lump;
             } 
@@ -1093,7 +1060,6 @@ var app = new Vue({
                 let coverSheets = Math.ceil(this.selected.circulation / yCover);
                 let backSheets = Math.ceil(this.selected.circulation / yBack);
 
-                // --- Фронтальная обложка ---
                 let cPaperDef = this.getPaperDef(this.selected.cover_paper);
                 let cPaperPrice = this.selected.cover_paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.cover_paper].price;
                 let cColorPrice = this.getColorPrice(this.selected.cover_color, cPaperDef, false);
@@ -1110,7 +1076,6 @@ var app = new Vue({
                 let coverCostPerSheet = cPaperPrice + cColorPrice + cLamPrice + cTonerRunsCost + cPlotterCost;
                 let totalCoverCost = (coverSheets * coverCostPerSheet) + cTonerUsdLump;
 
-                // --- Задняя обложка ---
                 let bcPaperDef = this.getPaperDef(this.selected.back_cover_paper);
                 let bcPaperPrice = this.selected.back_cover_paper === 'custom' ? this.selected.custom_paper_price : this.papers[this.selected.back_cover_paper].price;
                 let bcColorPrice = this.getColorPrice(this.selected.back_cover_color, bcPaperDef, false);
@@ -1127,9 +1092,8 @@ var app = new Vue({
                 let backCostPerSheet = bcPaperPrice + bcColorPrice + bcLamPrice + bcTonerRunsCost + bcPlotterCost;
                 let totalBackCost = (backSheets * backCostPerSheet) + bcTonerUsdLump;
 
-                // --- Внутренние блоки ---
                 let totalBlocksCost = 0;
-                let totalPresSheetsPerItem = 2; // Передняя и задняя обложка
+                let totalPresSheetsPerItem = 2;
                 let blockSheetsCount = 0;
 
                 for (let i = 0; i < this.selected.presentation_blocks.length; i++) {
@@ -1155,7 +1119,6 @@ var app = new Vue({
                     totalBlocksCost += (bSra3Sheets * bCostPerSheet) + bTonerUsdLump;
                 }
 
-                // --- Сборка на пружину ---
                 let bindCostPerItem = 500 + Math.max(0, totalPresSheetsPerItem - 20) * 1;
                 let totalBindCost = bindCostPerItem * this.selected.circulation;
 
@@ -1218,7 +1181,6 @@ var app = new Vue({
                 coverCostPerSheet = coverPaperPrice + coverColorPrice + coverLaminationPrice + toner1_runs_cost + extra_run_cost + toner2_runs_cost + coverPlotterCost;
                 blockCostPerSheet = blockPaperPrice + blockColorPrice + blockLaminationPrice;
 
-                // Спецтонер для блока
                 if (this.selected.block_toner !== 'none') {
                     blockRunCost = this.getBaseRunCost(blockPaperDef, false);
                     block_toners_usd_converted = (Number(this.selected.block_toners_usd) || 0) * this.config.usd_rate;
@@ -1273,7 +1235,6 @@ var app = new Vue({
                 pres: presDetails
             };
         },
-
         delivery_time: function() {
             let good = this.selected.good;
             let circ = Number(this.selected.circulation) || 0;
@@ -1303,7 +1264,6 @@ var app = new Vue({
                 }
             }
 
-            // Накидываем дни за припресс/ламинацию (1-2 дня базы + 1 день за каждые 500 шт)
             let hasLam = false;
             if (good === 'presentation') {
                 if (this.selected.cover_lamination !== 'none' || this.selected.back_cover_lamination !== 'none') hasLam = true;
@@ -1322,7 +1282,6 @@ var app = new Vue({
                 maxDays += 2 + lamAdd;
             }
 
-            // Доп дни за спецтонеры и плоттер (брошюра/презентация)
             if (this.selected.toner1 !== 'none') {
                 minDays += 2; 
                 maxDays += 3;
@@ -1339,7 +1298,6 @@ var app = new Vue({
 
             return minDays + '-' + maxDays;
         },
-        
         spec_size: function() {
             if (this.selected.good === 'envelope') {
                 return 'Конверт (' + (this.selected.envelope_size === 'small' ? 'До С4 включительно' : 'Больше С4') + ')';
@@ -1348,7 +1306,7 @@ var app = new Vue({
             } else if (this.selected.good === 'brochure') {
                 return this.sizes.brochure[this.selected.size].name + ' (' + (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + this.selected.pages_count + ' стр. (включая обложку)';
             } else if (this.selected.good === 'presentation') {
-                let sCount = 2; // обложки
+                let sCount = 2;
                 for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets);
                 return this.sizes.leaflet[this.selected.size].name + ' (' + (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + sCount + ' листов';
             } else {
@@ -1410,7 +1368,6 @@ var app = new Vue({
             let maxLen = Math.max(paperDef.w, paperDef.h);
             return Math.max(1, maxLen / 450);
         },
-        
         getBaseRunCost: function(paperDef, isEnvelope) {
             let c = this.config;
             if (isEnvelope) {
@@ -1421,21 +1378,17 @@ var app = new Vue({
             let maxLen = Math.max(paperDef.w, paperDef.h);
             let minLen = Math.min(paperDef.w, paperDef.h);
 
-            // Мелкий формат (А4/А5)
             if (maxLen <= 330 && minLen <= 225) {
                 return c.run_small;
             } 
-            // Стандартный формат (включая SRA3 450мм и 330x488мм)
             else if (maxLen <= 490) {
                 return c.run_color;
             } 
-            // Длинные форматы (баннеры от 491мм и выше), считаем кликами по ширине А4 (220 мм)
             else {
                 let clicks = Math.ceil(maxLen / 220); 
                 return c.run_small * clicks; 
             }
         },
-        
         getColorPrice: function(colorKey, paperDef, isEnvelope) {
             let c = this.config;
             let run_cost = this.getBaseRunCost(paperDef, isEnvelope);
@@ -1453,7 +1406,6 @@ var app = new Vue({
             let factor = this.getLenFactor(paperDef);
             return basePrice * factor;
         },
-
         getPaperName: function(key) {
             if (key === 'custom') return 'Своя бумага (' + this.selected.custom_paper_width + 'x' + this.selected.custom_paper_height + ' мм)';
             return this.papers[key] ? this.papers[key].name : '';
@@ -1555,7 +1507,6 @@ var app = new Vue({
                 this.selected.color = '4_0';
             }
 
-            // Авто-переключение бумаги и плоттера
             if (this.selected.good === 'sticker') {
                 this.selected.paper = 'p36';
                 this.selected.plotter_cut = 'plotter'; 
@@ -1583,7 +1534,7 @@ var app = new Vue({
                 this.selected.back_cover_toner_usd = 0;
 
                 this.selected.presentation_type = 'presentation';
-                this.selected.binding_edge = 'long';
+                this.selected.binding_edge = 'short'; // По умолчанию по короткой стороне
 
                 this.selected.presentation_blocks = [{
                     id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0
