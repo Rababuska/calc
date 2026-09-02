@@ -41,6 +41,11 @@
         .toast-notification.show {
             opacity: 1;
         }
+        .btn-delete-row {
+            padding: 0 6px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
@@ -54,7 +59,7 @@
             <tbody>
             <tr>
                 <td colspan="3">
-                    <strong>Полиграфический калькулятор (v6.7)</strong>
+                    <strong>Полиграфический калькулятор (v7.0 - Многопозиционный расчет)</strong>
                 </td>
             </tr>
             
@@ -516,105 +521,116 @@
                         <strong v-if="result_price.doesNotFit" class="text-danger">-</strong>
                         <strong v-else>{{ result_price.one_total }} тг</strong>
                     </div>
-                    <div class="p-2 bg-success text-white rounded" :class="{'bg-danger': result_price.doesNotFit}">
+                    <div class="p-2 bg-success text-white rounded mb-3" :class="{'bg-danger': result_price.doesNotFit}">
                         Итого тираж:<br/>
                         <h4 class="mb-0" v-if="result_price.doesNotFit">НЕ ПОМЕЩАЕТСЯ</h4>
                         <h4 class="mb-0" v-else>{{ result_price.total }} тг</h4>
                     </div>
+                    
+                    <button class="btn btn-primary btn-block shadow-sm" @click="addItemToTable" :disabled="result_price.doesNotFit">
+                        <strong>+ Добавить в таблицу КП</strong>
+                    </button>
                 </td>
             </tr>
             </tbody>
         </table>
 
+        <!-- СЕКЦИЯ СОХРАНЕННЫХ ПОЗИЦИЙ ДЛЯ КОПИРОВАНИЯ В WORD / EXCEL -->
         <div class="mt-5 mb-5">
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <h5 class="text-secondary mb-0">Таблица для копирования (Word / Excel)</h5>
                 <div>
-                    <button class="btn btn-sm btn-outline-primary shadow-sm mr-2" @click="copyTable('table')">Скопировать всю таблицу</button>
-                    <button class="btn btn-sm btn-outline-secondary shadow-sm" @click="copyTable('row')">Скопировать только строку</button>
+                    <h5 class="text-secondary d-inline-block mr-2 mb-0">Таблица для копирования (Word / Excel)</h5>
+                    <span class="badge badge-info" style="font-size: 0.9em;">Позиций: {{ savedItems.length }}</span>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-danger shadow-sm mr-2" @click="clearTable" v-if="savedItems.length > 0">
+                        Очистить всё
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary shadow-sm" @click="copyTable('table')" :disabled="savedItems.length === 0">
+                        Скопировать таблицу для КП
+                    </button>
                 </div>
             </div>
             
             <div class="p-3 bg-white border rounded">
-                <table ref="copyTable" width="100%" border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000; font-family: 'Times New Roman', Times, serif; font-size: 14px;">
-                    <colgroup>
-                        <col width="5%">
-                        <col width="15%">
-                        <col width="35%">
-                        <col width="10%">
-                        <col width="12%">
-                        <col width="13%">
-                        <col width="10%">
-                    </colgroup>
-                    <thead style="background-color: #f2f2f2;">
-                        <tr>
-                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">№</th>
-                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Наименование</th>
-                            <th align="left" style="border: 1px solid #000; padding: 6px; text-align: left;">Данные</th>
-                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Кол-во / шт</th>
-                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Стоимость за единицу / теңге</th>
-                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Итого / теңге</th>
-                            <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Срок / рабочие дни</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr ref="copyRow">
-                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">1</td>
-                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
-                                <strong>{{ selected.good === 'presentation' ? (selected.presentation_type === 'notebook' ? 'Блокнот' : 'Презентация') : goods[selected.good].name }}</strong>
-                            </td>
-                            <td valign="top" style="border: 1px solid #000; padding: 6px; vertical-align: top;">
-                                Размер: {{ spec_size }}<br/>
-                                
-                                <span v-if="selected.good !== 'brochure' && selected.good !== 'envelope' && selected.good !== 'presentation'">
-                                    Цветность: {{ colors[selected.color].name }}<br/>
-                                    Ламинация: {{ laminations[selected.lamination].name }}<br/>
-                                    Бумага: {{ spec_paper }}<br/>
-                                    <span v-if="(selected.good === 'leaflet' || selected.good === 'sticker') && selected.plotter_cut !== 'none'">Плоттерная резка<br/></span>
-                                    <span v-if="selected.round_corners">Скругление углов<br/></span>
-                                </span>
-                                
-                                <span v-if="selected.good === 'envelope'">
-                                    Цветность: {{ colors[selected.color].name }}<br/>
-                                    Конверт<br/>
-                                </span>
-                                
-                                <span v-if="selected.good === 'brochure'">
-                                    <strong>Обложка:</strong> {{ colors[selected.cover_color].name }}, {{ laminations[selected.cover_lamination].name }}, {{ getPaperName(selected.cover_paper) }}<span v-if="selected.cover_plotter_cut !== 'none'">, Плоттерная резка</span><br/>
-                                    <strong v-if="selected.pages_count > 4">Блок:</strong> <span v-if="selected.pages_count > 4">{{ colors[selected.block_color].name }}, {{ laminations[selected.block_lamination].name }}, {{ getPaperName(selected.block_paper) }}<br/></span>
-                                    <span v-if="selected.block_toner !== 'none'">Спецтонер блока: {{ toners[selected.block_toner].name }}<br/></span>
-                                </span>
+                <div v-if="savedItems.length === 0" class="text-center py-4 text-muted">
+                    Таблица пока пуста. Рассчитайте изделие выше и нажмите <strong>«+ Добавить в таблицу КП»</strong>.
+                </div>
 
-                                <span v-if="selected.good === 'presentation'">
-                                    <strong>Обложка:</strong> {{ colors[selected.cover_color].name }}, {{ laminations[selected.cover_lamination].name }}, {{ getPaperName(selected.cover_paper) }} <span v-if="selected.cover_toner !== 'none'">+ {{ toners[selected.cover_toner].name }}</span><span v-if="selected.cover_plotter_cut !== 'none'">, Плоттерная резка</span><br/>
-                                    <strong>Задняя обложка:</strong> {{ colors[selected.back_cover_color].name }}, {{ laminations[selected.back_cover_lamination].name }}, {{ getPaperName(selected.back_cover_paper) }} <span v-if="selected.back_cover_toner !== 'none'">+ {{ toners[selected.back_cover_toner].name }}</span><span v-if="selected.back_cover_plotter_cut !== 'none'">, Плоттерная резка</span><br/>
-                                    <strong v-if="selected.presentation_blocks.length > 0">Внутренние блоки:</strong><br/>
-                                    <span v-for="(b, i) in selected.presentation_blocks" :key="'copy_'+i">
-                                        &nbsp;&nbsp;&nbsp;- Блок {{i+1}} ({{b.sheets}} л.): {{ colors[b.color].name }}, {{ laminations[b.lamination].name }}, {{ getPaperName(b.paper) }} <span v-if="b.toner !== 'none'">+ {{ toners[b.toner].name }}</span><br/>
-                                    </span>
-                                    Сборка на металлическую пружину ({{ selected.binding_edge === 'long' ? 'по длинной стороне' : 'по короткой стороне' }})<br/>
-                                </span>
+                <div v-show="savedItems.length > 0">
+                    <table ref="copyTable" width="100%" border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000; font-family: 'Times New Roman', Times, serif; font-size: 14px;">
+                        <colgroup>
+                            <col width="4%">
+                            <col width="16%">
+                            <col width="34%">
+                            <col width="10%">
+                            <col width="12%">
+                            <col width="12%">
+                            <col width="12%">
+                        </colgroup>
+                        <thead style="background-color: #f2f2f2;">
+                            <tr>
+                                <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">№</th>
+                                <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Наименование</th>
+                                <th align="left" style="border: 1px solid #000; padding: 6px; text-align: left;">Данные</th>
+                                <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Кол-во / шт</th>
+                                <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Стоимость за единицу / теңге</th>
+                                <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Итого / теңге</th>
+                                <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Срок / рабочие дни</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(item, idx) in savedItems" :key="item.id">
+                                <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                    {{ idx + 1 }}
+                                </td>
+                                <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                    <strong>{{ item.title }}</strong>
+                                </td>
+                                <td valign="top" style="border: 1px solid #000; padding: 6px; vertical-align: top;" v-html="item.desc"></td>
+                                <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                    {{ item.circulation }}
+                                </td>
+                                <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                    {{ item.one_total }}
+                                </td>
+                                <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                    <strong>{{ item.total }}</strong>
+                                </td>
+                                <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
+                                    {{ item.delivery }}
+                                </td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr style="background-color: #f9f9f9; font-weight: bold;">
+                                <td colspan="5" align="right" style="border: 1px solid #000; padding: 6px; text-align: right;">
+                                    ИТОГО ПО ЗАКАЗУ:
+                                </td>
+                                <td align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">
+                                    {{ grandTotal }}
+                                </td>
+                                <td align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">
+                                    -
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
 
-                                <span v-if="selected.toner1 !== 'none' && selected.good !== 'presentation'">5-й цвет{{ selected.good === 'brochure' ? ' (Обложка)' : '' }}: {{ toners[selected.toner1].name }}<br/></span>
-                                <span v-if="selected.add_extra_run && selected.good !== 'presentation'">Доп. прогон{{ selected.good === 'brochure' ? ' (Обложка)' : '' }}: {{ selected.toner2 !== 'none' ? toners[selected.toner2].name : 'Да (CMYK)' }}<br/></span>
-                            </td>
-                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
-                                {{ selected.circulation }}
-                            </td>
-                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
-                                {{ result_price.doesNotFit ? '-' : result_price.one_total }}
-                            </td>
-                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
-                                <strong>{{ result_price.doesNotFit ? 'НЕ ПОМЕЩАЕТСЯ' : result_price.total }}</strong>
-                            </td>
-                            <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle;">
-                                {{ delivery_time }}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                    <!-- Вспомогательная панель для удаления строк на экране -->
+                    <div class="mt-3">
+                        <small class="text-muted font-weight-bold d-block mb-1">Управление сохраненными позициями:</small>
+                        <div class="d-flex flex-wrap">
+                            <div v-for="(it, i) in savedItems" :key="'del_'+it.id" class="mr-2 mb-2 p-1 bg-light border rounded small d-flex align-items-center">
+                                <span class="mr-2">#{{ i + 1 }} {{ it.title }} ({{ it.circulation }} шт)</span>
+                                <button class="btn btn-outline-danger btn-sm btn-delete-row" title="Удалить позицию" @click="removeItem(i)">✕</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
+
     </div>
 </div>
 
@@ -709,6 +725,10 @@ var app = new Vue({
         },
         
         blockIdCounter: 2,
+
+        // Сохраненные позиции для формирования КП
+        savedItems: [],
+        savedItemCounter: 1,
 
         selected: {
             good: 'leaflet',
@@ -873,6 +893,13 @@ var app = new Vue({
         }
     },
     computed: {
+        grandTotal: function() {
+            let sum = 0;
+            for (let it of this.savedItems) {
+                sum += Number(it.total) || 0;
+            }
+            return sum;
+        },
         laminations: function() {
             let c = this.config;
             return {
@@ -1316,6 +1343,95 @@ var app = new Vue({
         }
     },
     methods: {
+        // Добавление текущего расчета в общую таблицу
+        addItemToTable: function() {
+            if (this.result_price.doesNotFit) {
+                alert('Невозможно добавить позицию: изделие не помещается на лист!');
+                return;
+            }
+
+            let title = this.selected.good === 'presentation' ? (this.selected.presentation_type === 'notebook' ? 'Блокнот' : 'Презентация') : this.goods[this.selected.good].name;
+            let desc = 'Размер: ' + this.spec_size + '<br/>';
+
+            if (this.selected.good !== 'brochure' && this.selected.good !== 'envelope' && this.selected.good !== 'presentation') {
+                desc += 'Цветность: ' + this.colors[this.selected.color].name + '<br/>';
+                desc += 'Ламинация: ' + this.laminations[this.selected.lamination].name + '<br/>';
+                desc += 'Бумага: ' + this.spec_paper + '<br/>';
+                if ((this.selected.good === 'leaflet' || this.selected.good === 'sticker') && this.selected.plotter_cut !== 'none') {
+                    desc += 'Плоттерная резка<br/>';
+                }
+                if (this.selected.round_corners) {
+                    desc += 'Скругление углов<br/>';
+                }
+            } else if (this.selected.good === 'envelope') {
+                desc += 'Цветность: ' + this.colors[this.selected.color].name + '<br/>Конверт<br/>';
+            } else if (this.selected.good === 'brochure') {
+                desc += '<strong>Обложка:</strong> ' + this.colors[this.selected.cover_color].name + ', ' + this.laminations[this.selected.cover_lamination].name + ', ' + this.getPaperName(this.selected.cover_paper);
+                if (this.selected.cover_plotter_cut !== 'none') desc += ', Плоттерная резка';
+                desc += '<br/>';
+                if (this.selected.pages_count > 4) {
+                    desc += '<strong>Блок:</strong> ' + this.colors[this.selected.block_color].name + ', ' + this.laminations[this.selected.block_lamination].name + ', ' + this.getPaperName(this.selected.block_paper) + '<br/>';
+                }
+                if (this.selected.block_toner !== 'none') {
+                    desc += 'Спецтонер блока: ' + this.toners[this.selected.block_toner].name + '<br/>';
+                }
+            } else if (this.selected.good === 'presentation') {
+                desc += '<strong>Обложка:</strong> ' + this.colors[this.selected.cover_color].name + ', ' + this.laminations[this.selected.cover_lamination].name + ', ' + this.getPaperName(this.selected.cover_paper);
+                if (this.selected.cover_toner !== 'none') desc += ' + ' + this.toners[this.selected.cover_toner].name;
+                if (this.selected.cover_plotter_cut !== 'none') desc += ', Плоттерная резка';
+                desc += '<br/>';
+
+                desc += '<strong>Задняя обложка:</strong> ' + this.colors[this.selected.back_cover_color].name + ', ' + this.laminations[this.selected.back_cover_lamination].name + ', ' + this.getPaperName(this.selected.back_cover_paper);
+                if (this.selected.back_cover_toner !== 'none') desc += ' + ' + this.toners[this.selected.back_cover_toner].name;
+                if (this.selected.back_cover_plotter_cut !== 'none') desc += ', Плоттерная резка';
+                desc += '<br/>';
+
+                if (this.selected.presentation_blocks.length > 0) {
+                    desc += '<strong>Внутренние блоки:</strong><br/>';
+                    for (let i = 0; i < this.selected.presentation_blocks.length; i++) {
+                        let b = this.selected.presentation_blocks[i];
+                        desc += '&nbsp;&nbsp;&nbsp;- Блок ' + (i + 1) + ' (' + b.sheets + ' л.): ' + this.colors[b.color].name + ', ' + this.laminations[b.lamination].name + ', ' + this.getPaperName(b.paper);
+                        if (b.toner !== 'none') desc += ' + ' + this.toners[b.toner].name;
+                        desc += '<br/>';
+                    }
+                }
+                desc += 'Сборка на металлическую пружину (' + (this.selected.binding_edge === 'short' ? 'по короткой стороне' : 'по длинной стороне') + ')<br/>';
+            }
+
+            if (this.selected.toner1 !== 'none' && this.selected.good !== 'presentation') {
+                desc += '5-й цвет' + (this.selected.good === 'brochure' ? ' (Обложка)' : '') + ': ' + this.toners[this.selected.toner1].name + '<br/>';
+            }
+            if (this.selected.add_extra_run && this.selected.good !== 'presentation') {
+                desc += 'Доп. прогон' + (this.selected.good === 'brochure' ? ' (Обложка)' : '') + ': ' + (this.selected.toner2 !== 'none' ? this.toners[this.selected.toner2].name : 'Да (CMYK)') + '<br/>';
+            }
+
+            this.savedItems.push({
+                id: this.savedItemCounter++,
+                title: title,
+                desc: desc,
+                circulation: this.selected.circulation,
+                one_total: this.result_price.one_total,
+                total: this.result_price.total,
+                delivery: this.delivery_time
+            });
+
+            this.showNotification('Позиция добавлена в таблицу КП!');
+        },
+
+        // Удаление конкретной позиции
+        removeItem: function(idx) {
+            this.savedItems.splice(idx, 1);
+            this.showNotification('Позиция удалена');
+        },
+
+        // Полная очистка таблицы
+        clearTable: function() {
+            if (confirm('Вы уверены, что хотите полностью очистить таблицу КП?')) {
+                this.savedItems = [];
+                this.showNotification('Таблица полностью очищена');
+            }
+        },
+
         addBlock: function() {
             this.selected.presentation_blocks.push({
                 id: this.blockIdCounter++,
@@ -1347,7 +1463,8 @@ var app = new Vue({
             }, 2500);
         },
         copyTable: function(type) {
-            let el = type === 'table' ? this.$refs.copyTable : this.$refs.copyRow;
+            if (this.savedItems.length === 0) return;
+            let el = this.$refs.copyTable;
             let range = document.createRange();
             range.selectNode(el);
             let sel = window.getSelection();
@@ -1355,7 +1472,7 @@ var app = new Vue({
             sel.addRange(range);
             try {
                 document.execCommand('copy');
-                this.showNotification(type === 'table' ? 'Вся таблица скопирована в буфер обмена!' : 'Строка с расчетом скопирована в буфер обмена!');
+                this.showNotification('Таблица КП скопирована в буфер обмена!');
             } catch (err) {
                 this.showNotification('Не удалось скопировать. Пожалуйста, выделите текст вручную.');
             }
@@ -1551,13 +1668,6 @@ var app = new Vue({
             var charCode = evt.which ? evt.which : evt.keyCode;
             if ((charCode > 31 && (charCode < 48 || charCode > 57)) && charCode !== 46) evt.preventDefault();
             else return true;
-        }
-    },
-    filters: {
-        formatNumber: function(value) {
-            if (typeof value === 'string') return value;
-            if (!value) return 0;
-            return Math.round(Number(value));
         }
     }
 });
