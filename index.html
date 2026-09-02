@@ -54,7 +54,7 @@
             <tbody>
             <tr>
                 <td colspan="3">
-                    <strong>Полиграфический калькулятор (v6.6 - Раздельные раздвижки X и Y)</strong>
+                    <strong>Полиграфический калькулятор (v6.7)</strong>
                 </td>
             </tr>
             
@@ -104,8 +104,8 @@
                             <option value="landscape">Альбомная (горизонтальная)</option>
                         </select>
                         <select class="form-control form-control-sm" v-model="selected.binding_edge" v-if="selected.good === 'presentation'">
-                            <option value="short">Пружина по короткой стороне</option>
-                            <option value="long">Пружина по длинной стороне</option>
+                            <option :value="'short'">Пружина по короткой стороне</option>
+                            <option :value="'long'">Пружина по длинной стороне</option>
                         </select>
                     </div>
                     <div v-else-if="selected.good === 'envelope'" class="mt-2">
@@ -129,7 +129,6 @@
 
             <tr>
                 <td colspan="3" class="p-0 border-0">
-                    
                     <div v-if="selected.good !== 'brochure' && selected.good !== 'presentation'" class="row m-0 p-2">
                         <div class="col-4 pl-0">
                             <label>Цветность</label>
@@ -225,7 +224,6 @@
                     </div>
 
                     <div v-if="selected.good === 'presentation'" class="p-2 bg-light">
-                        
                         <div class="section-title text-primary">Настройки обложки (1 лист)</div>
                         <div class="row mb-3 bg-white p-2 border rounded m-1">
                             <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.cover_color"><option v-for="(item, key) in colors" :value="key">{{ item.name }}</option></select></div>
@@ -594,7 +592,7 @@
                                     <span v-for="(b, i) in selected.presentation_blocks" :key="'copy_'+i">
                                         &nbsp;&nbsp;&nbsp;- Блок {{i+1}} ({{b.sheets}} л.): {{ colors[b.color].name }}, {{ laminations[b.lamination].name }}, {{ getPaperName(b.paper) }} <span v-if="b.toner !== 'none'">+ {{ toners[b.toner].name }}</span><br/>
                                     </span>
-                                    Сборка на металлическую пружину ({{ selected.binding_edge === 'short' ? 'по короткой стороне' : 'по длинной стороне' }})<br/>
+                                    Сборка на металлическую пружину ({{ selected.binding_edge === 'long' ? 'по длинной стороне' : 'по короткой стороне' }})<br/>
                                 </span>
 
                                 <span v-if="selected.toner1 !== 'none' && selected.good !== 'presentation'">5-й цвет{{ selected.good === 'brochure' ? ' (Обложка)' : '' }}: {{ toners[selected.toner1].name }}<br/></span>
@@ -741,7 +739,7 @@ var app = new Vue({
             back_cover_toner_usd: 0,
             back_cover_plotter_cut: 'none',
             presentation_type: 'presentation',
-            binding_edge: 'short', // По умолчанию по короткой стороне
+            binding_edge: 'short',
             presentation_blocks: [
                 { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
             ],
@@ -1534,7 +1532,7 @@ var app = new Vue({
                 this.selected.back_cover_toner_usd = 0;
 
                 this.selected.presentation_type = 'presentation';
-                this.selected.binding_edge = 'short'; // По умолчанию по короткой стороне
+                this.selected.binding_edge = 'short';
 
                 this.selected.presentation_blocks = [{
                     id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0
