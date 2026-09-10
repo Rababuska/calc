@@ -181,9 +181,10 @@ const CalcParsers = {
         let desc = item.desc || '';
 
         // Определение типа изделия
-        if (title.includes('пакет')) {
+            if (title.includes('пакет')) {
             spec.good = 'bag';
-            if (desc.includes('350')) spec.bag_size = 'bag_350_225_80';
+            if (desc.includes('230')) spec.bag_size = 'bag_350_230_80';
+            else if (desc.includes('225') || desc.includes('350')) spec.bag_size = 'bag_350_225_80';
             else if (desc.includes('250')) spec.bag_size = 'bag_250_200_80';
             spec.bag_print_sides = desc.includes('1 стороны') ? 'single' : 'both';
         } else if (title.includes('календар')) {
