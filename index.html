@@ -149,6 +149,12 @@
                             <select class="form-control form-control-sm mb-2" v-model="selected.bag_size">
                                 <option v-for="(item, key) in sizes.bag" :key="key" :value="key">{{ item.name }}</option>
                             </select>
+
+                            <!-- Дисклеймер при выборе 350х230х80 -->
+                            <div class="alert alert-warning py-1 px-2 mb-2 small font-weight-bold" v-if="selected.bag_size === 'bag_350_230_80'">
+                                ⚠️ При полной заливке рекомендуем выбрать 350 (В) х 225 (Ш) х 80 (Г) мм
+                            </div>
+                            
                             <select class="form-control form-control-sm mb-2" v-model="selected.bag_print_sides">
                                 <option value="both">Печать с 2 сторон (обе половинки)</option>
                                 <option value="single">Печать с 1 стороны (вторая половинка 0+0)</option>
