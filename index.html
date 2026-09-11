@@ -770,6 +770,7 @@
                     </div>
                     <div class="d-flex align-items-center">
                         <div>
+						<button class="btn btn-sm btn-info shadow-sm mr-2 text-white" @click="addManualItem"><strong>+ Своя позиция</strong></button>
                             <button class="btn btn-sm btn-outline-danger shadow-sm mr-2" @click="clearTable" v-if="savedItems.length > 0">Очистить всё</button>
                             <button class="btn btn-sm btn-danger shadow-sm mr-2" @click="exportToPDF" :disabled="savedItems.length === 0">📄 Скачать PDF</button>
                             <button class="btn btn-sm btn-outline-primary shadow-sm" @click="copyTable" :disabled="savedItems.length === 0">📋 Скопировать таблицу (Word)</button>
