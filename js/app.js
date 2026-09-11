@@ -2,6 +2,7 @@
 // ОСНОВНОЕ VUE-ПРИЛОЖЕНИЕ КАЛЬКУЛЯТОРА (js/app.js)
 // ==========================================================================
 
+// Блокировка горячих клавиш исходного кода
 document.addEventListener('keydown', function(e) {
     if (e.keyCode === 123) { e.preventDefault(); return false; }
     if (e.ctrlKey && (e.keyCode === 85 || e.keyCode === 117)) { e.preventDefault(); return false; }
@@ -15,7 +16,6 @@ var app = new Vue({
         isSyncing: false,
         includeVat: true,
 
-        // Справочники из папки data/
         managers: typeof APP_MANAGERS !== 'undefined' ? APP_MANAGERS : [],
         config: typeof APP_CONFIG !== 'undefined' ? APP_CONFIG : {},
         goods: typeof APP_GOODS !== 'undefined' ? APP_GOODS : {},
@@ -24,7 +24,6 @@ var app = new Vue({
         papers: typeof APP_PAPERS !== 'undefined' ? APP_PAPERS : {},
         sizes: typeof APP_SIZES !== 'undefined' ? APP_SIZES : {},
 
-        // Авторизация
         selectedManagerId: 'm_igor',
         enteredPassword: '',
         rememberMe: false,
@@ -55,13 +54,9 @@ var app = new Vue({
             paper: 'p8',
             envelope_size: 'small',
             envelope_price: 25,
-
-            // Пакеты
             bag_size: 'bag_350_225_80',
             bag_print_sides: 'both',
             bag_production: 'plotter',
-
-            // Календари
             calendar_sheets: 7,
             calendar_spring: 'white',
             calendar_stand_type: 'hard_cover',
@@ -71,11 +66,8 @@ var app = new Vue({
             calendar_cliche_exists: false,
             calendar_cliche_w: 80,
             calendar_cliche_h: 40,
-
-            // Презентации и блокноты
             presentation_spring_type: 'metal',
             presentation_only_block: false,
-
             orientation: 'portrait',
             pages_count: 8,
             cover_paper: 'p6',
@@ -291,9 +283,8 @@ var app = new Vue({
             return (((w + 10) * (h + 10)) / 100).toFixed(1);
         },
         calendarClicheCost: function() {
-            if (typeof window.ProductModules === 'undefined') return 0;
-            let mod = window.ProductModules['calendar'];
-            return mod ? mod.calcClicheCost(this.selected) : 0;
+            let mod = window.ProductModules ? window.ProductModules['calendar'] : null;
+            return mod ? mod.calcClicheCost(this.selected) : (typeof CalcEngine !== 'undefined' && typeof CalcEngine.calcClicheCost === 'function' ? CalcEngine.calcClicheCost(this.selected) : 0);
         },
         spec_size: function() {
             if (!this.sizes || Object.keys(this.sizes).length === 0) return '';
@@ -525,15 +516,12 @@ var app = new Vue({
             });
             this.showNotification('Добавлена строка. Введите параметры и срок вручную!');
         },
-
-        // ИСПРАВЛЕНИЕ ЗДЕСЬ: Методы onCellBlur и onDescBlur
         onCellBlur: function(evt, idx, field) {
             let val = evt.target.innerText.trim();
             let it = this.savedItems[idx];
             let rate = this.config.vat_rate || 1.16;
 
             if (field === 'circulation' || field === 'one_total') {
-                // Очистка от пробелов и замена запятой на точку для правильного парсинга
                 let num = parseFloat(val.replace(/\s+/g, '').replace(',', '.')) || 0;
                 it[field] = num;
                 it.total = Math.round(it.circulation * it.one_total);
@@ -549,10 +537,8 @@ var app = new Vue({
             }
         },
         onDescBlur: function(evt, idx) {
-            // Для описания сохраняем HTML (включая <br> от Enter)
             this.savedItems[idx].desc = evt.target.innerHTML;
         },
-
         removeItem: function(idx) {
             if (this.editingIndex === idx) this.editingIndex = null;
             this.savedItems.splice(idx, 1);
@@ -566,37 +552,96 @@ var app = new Vue({
                 this.showNotification('Таблица очищена');
             }
         },
-        fallbackCopy: function(html, plain) {
-            let handler = function(e) {
-                e.clipboardData.setData('text/html', html);
-                e.clipboardData.setData('text/plain', plain);
-                e.preventDefault();
-            };
-            document.addEventListener('copy', handler);
-            document.execCommand('copy');
-            document.removeEventListener('copy', handler);
+        generateWordTableHtml: function() {
+            let comp = this.companyName ? this.companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
+            let title = `КП ${this.currentDateFormatted} ${comp}`;
+            let vatLabel = this.includeVat ? 'с учетом НДС' : 'без учета НДС';
+            
+            let rowsHtml = '';
+            this.savedItems.forEach((it, idx) => {
+                rowsHtml += `
+                <tr>
+                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <span>${idx + 1}</span>
+                    </td>
+                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <strong>${it.title}</strong>
+                    </td>
+                    <td align="left" valign="top" style="border: 1px solid #000000; padding: 6px; text-align: left; vertical-align: top; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <span>${it.desc}</span>
+                    </td>
+                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <span>${it.circulation}</span>
+                    </td>
+                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <span>${it.one_total}</span>
+                    </td>
+                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <strong>${it.total}</strong>
+                    </td>
+                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+                        <span>${it.delivery || '-'}</span>
+                    </td>
+                </tr>`;
+            });
+
+            return `
+            <table width="100%" border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000000; font-family: 'Times New Roman', Times, serif; font-size: 13px; color: #000000; text-decoration: none;">
+                <colgroup>
+                    <col width="5%">
+                    <col width="16%">
+                    <col width="34%">
+                    <col width="10%">
+                    <col width="12%">
+                    <col width="12%">
+                    <col width="11%">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th colspan="7" align="center" style="border: 1px solid #000000; padding: 8px; text-align: center; background-color: #f2f2f2; font-size: 15px; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
+                            <strong>${title}</strong>
+                        </th>
+                    </tr>
+                    <tr style="background-color: #f9f9f9;">
+                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">№</th>
+                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Наименование</th>
+                        <th align="left" style="border: 1px solid #000000; padding: 6px; text-align: left; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Данные</th>
+                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Кол-во / шт</th>
+                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Стоимость за единицу / теңге</th>
+                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Итого / теңге</th>
+                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Срок / рабочие дни</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+                <tfoot>
+                    <tr style="background-color: #f9f9f9; font-weight: bold;">
+                        <td colspan="5" align="right" style="border: 1px solid #000000; padding: 6px; text-align: right; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
+                            <strong>ИТОГО ПО ЗАКАЗУ (${vatLabel}):</strong>
+                        </td>
+                        <td align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
+                            <strong>${this.grandTotal}</strong>
+                        </td>
+                        <td align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
+                            <span>${this.maxDeliveryTime}</span>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>`;
         },
-        copyTable: function() {
-            if (this.savedItems.length === 0) return;
-            let html = CalcParsers.generateWordTableHtml(
-                this.savedItems, this.companyName, this.currentDateFormatted, 
-                this.includeVat, this.grandTotal, this.maxDeliveryTime
-            );
-            let plain = CalcParsers.generatePlainText(
-                this.savedItems, this.companyName, this.currentDateFormatted, 
-                this.includeVat, this.grandTotal, this.maxDeliveryTime
-            );
-
-            if (navigator.clipboard && window.ClipboardItem) {
-                let htmlBlob = new Blob([html], { type: 'text/html' });
-                let textBlob = new Blob([plain], { type: 'text/plain' });
-                navigator.clipboard.write([
-                    new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
-                ]).catch(() => { this.fallbackCopy(html, plain); });
-            } else {
-                this.fallbackCopy(html, plain);
-            }
-
+        generatePlainText: function() {
+            let comp = this.companyName ? this.companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
+            let text = `КП ${this.currentDateFormatted} ${comp}\n\n`;
+            this.savedItems.forEach((it, idx) => {
+                text += `${idx + 1}. ${it.title}\n`;
+                text += `${it.desc.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '')}\n`;
+                text += `Кол-во: ${it.circulation} шт. | Цена: ${it.one_total} тг | Итого: ${it.total} тг | Срок: ${it.delivery || '-'}\n\n`;
+            });
+            text += `ИТОГО ПО ЗАКАЗУ: ${this.grandTotal} тг\nСрок: ${this.maxDeliveryTime}`;
+            return text;
+        },
+        saveCurrentToHistory: function() {
             let summaryTitles = this.savedItems.map(i => `${i.title} (${i.circulation} шт)`).join(', ');
             let targetId = this.currentLoadedHistoryId || Date.now();
             let isUpdate = !!this.currentLoadedHistoryId;
@@ -606,7 +651,7 @@ var app = new Vue({
                 managerId: this.currentManager.id,
                 managerName: this.currentManager.name,
                 date: this.currentDateFormatted,
-                company: this.companyName.trim(),
+                company: this.companyName ? this.companyName.trim() : '',
                 includeVat: this.includeVat,
                 items: JSON.parse(JSON.stringify(this.savedItems)),
                 total: this.grandTotal,
@@ -622,7 +667,7 @@ var app = new Vue({
             }
             this.saveUserHistory();
 
-            if (this.googleScriptUrl) {
+            if (this.googleScriptUrl && this.googleScriptUrl.startsWith('http')) {
                 this.isSyncing = true;
                 fetch(this.googleScriptUrl, {
                     method: 'POST',
@@ -632,7 +677,60 @@ var app = new Vue({
                 .catch(err => console.error('Ошибка сохранения в Google:', err))
                 .finally(() => { this.isSyncing = false; });
             }
-            this.showNotification(isUpdate ? 'КП обновлено и скопировано!' : 'КП скопировано и сохранено!');
+        },
+        exportToPDF: function() {
+            if (this.savedItems.length === 0) {
+                this.showNotification('Таблица пуста!');
+                return;
+            }
+
+            this.showNotification('Файл скачивается...');
+            
+            if (typeof PdfGenerator === 'undefined') {
+                alert('Генератор PDF не загружен. Проверьте подключение pdf.js!');
+                return;
+            }
+
+            PdfGenerator.download(
+                this.savedItems, 
+                this.companyName, 
+                this.currentDateFormatted, 
+                this.includeVat, 
+                this.grandTotal, 
+                this.maxDeliveryTime,
+                this.currentManager
+            );
+
+            this.saveCurrentToHistory();
+        },
+        fallbackCopy: function(html, plain) {
+            let handler = function(e) {
+                e.clipboardData.setData('text/html', html);
+                e.clipboardData.setData('text/plain', plain);
+                e.preventDefault();
+            };
+            document.addEventListener('copy', handler);
+            document.execCommand('copy');
+            document.removeEventListener('copy', handler);
+        },
+        copyTable: function() {
+            if (this.savedItems.length === 0) return;
+            
+            let html = this.generateWordTableHtml();
+            let plain = this.generatePlainText();
+
+            if (navigator.clipboard && window.ClipboardItem) {
+                let htmlBlob = new Blob([html], { type: 'text/html' });
+                let textBlob = new Blob([plain], { type: 'text/plain' });
+                navigator.clipboard.write([
+                    new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+                ]).catch(() => { this.fallbackCopy(html, plain); });
+            } else {
+                this.fallbackCopy(html, plain);
+            }
+
+            this.showNotification('КП скопировано в буфер обмена!');
+            this.saveCurrentToHistory();
         },
         loadFromHistory: function(record) {
             if (this.savedItems.length > 0) {
@@ -719,7 +817,6 @@ var app = new Vue({
             }
             if (this.selected.good === 'bag') {
                 this.selected.bag_size = 'bag_350_225_80';
-                this.selected.bag_print_sides = 'both';
                 this.selected.paper = 'p51';
                 this.selected.color = '4_0';
                 this.selected.lamination = 'press_matt_1_0';
@@ -745,34 +842,23 @@ var app = new Vue({
                     this.selected.paper = 'p8';
                 }
             }
-            if (this.selected.good === 'pad') {
-                this.selected.size = 'a5';
-                this.selected.orientation = 'portrait';
-                this.selected.binding_edge = 'short';
-                this.selected.cover_paper = 'p8';
-                this.selected.cover_color = '4_0';
-                this.selected.cover_lamination = 'none';
-                this.selected.back_cover_paper = 'p8';
-                this.selected.back_cover_color = '0_0';
-                this.selected.back_cover_lamination = 'none';
-                this.selected.presentation_blocks = [
-                    { id: 1, sheets: 50, paper: 'p16', color: '1_0', lamination: 'none', toner: 'none', toner_usd: 0 }
-                ];
-            }
             if (this.selected.good === 'presentation') {
                 this.selected.size = 'a4';
                 this.selected.orientation = 'landscape';
-                this.selected.binding_edge = 'long';
-                this.selected.presentation_spring_type = 'metal';
-                this.selected.presentation_only_block = false;
-                this.selected.cover_paper = 'p6';
+                this.selected.cover_paper = 'p8';
                 this.selected.cover_color = '4_0';
                 this.selected.cover_lamination = 'none';
+                this.selected.cover_toner = 'none';
+                this.selected.cover_toner_usd = 0;
                 this.selected.back_cover_paper = 'p8';
                 this.selected.back_cover_color = '0_0';
                 this.selected.back_cover_lamination = 'none';
+                this.selected.back_cover_toner = 'none';
+                this.selected.back_cover_toner_usd = 0;
+                this.selected.presentation_type = 'presentation';
+                this.selected.binding_edge = 'short';
                 this.selected.presentation_blocks = [
-                    { id: 1, sheets: 20, paper: 'p4', color: '4_0', lamination: 'none', toner: 'none', toner_usd: 0 }
+                    { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
                 ];
             }
 
