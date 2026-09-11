@@ -2,7 +2,6 @@
 // ОСНОВНОЕ VUE-ПРИЛОЖЕНИЕ КАЛЬКУЛЯТОРА (js/app.js)
 // ==========================================================================
 
-// Блокировка горячих клавиш исходного кода
 document.addEventListener('keydown', function(e) {
     if (e.keyCode === 123) { e.preventDefault(); return false; }
     if (e.ctrlKey && (e.keyCode === 85 || e.keyCode === 117)) { e.preventDefault(); return false; }
@@ -552,6 +551,8 @@ var app = new Vue({
                 this.showNotification('Таблица очищена');
             }
         },
+
+        // --- ГЕНЕРАЦИЯ HTML ДЛЯ PDF И WORD ---
         generateWordTableHtml: function() {
             let comp = this.companyName ? this.companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
             let title = `КП ${this.currentDateFormatted} ${comp}`;
@@ -630,6 +631,8 @@ var app = new Vue({
                 </tfoot>
             </table>`;
         },
+
+        // --- ГЕНЕРАЦИЯ ОБЫЧНОГО ТЕКСТА ---
         generatePlainText: function() {
             let comp = this.companyName ? this.companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
             let text = `КП ${this.currentDateFormatted} ${comp}\n\n`;
@@ -641,6 +644,8 @@ var app = new Vue({
             text += `ИТОГО ПО ЗАКАЗУ: ${this.grandTotal} тг\nСрок: ${this.maxDeliveryTime}`;
             return text;
         },
+
+        // --- ЦЕНТРАЛИЗОВАННОЕ СОХРАНЕНИЕ В ИСТОРИЮ ---
         saveCurrentToHistory: function() {
             let summaryTitles = this.savedItems.map(i => `${i.title} (${i.circulation} шт)`).join(', ');
             let targetId = this.currentLoadedHistoryId || Date.now();
@@ -678,6 +683,8 @@ var app = new Vue({
                 .finally(() => { this.isSyncing = false; });
             }
         },
+
+        // --- ЭКСПОРТ В PDF (вызов внешнего модуля pdf.js) ---
         exportToPDF: function() {
             if (this.savedItems.length === 0) {
                 this.showNotification('Таблица пуста!');
@@ -691,6 +698,7 @@ var app = new Vue({
                 return;
             }
 
+            // Передаем данные + текущего менеджера в генератор
             PdfGenerator.download(
                 this.savedItems, 
                 this.companyName, 
@@ -703,6 +711,8 @@ var app = new Vue({
 
             this.saveCurrentToHistory();
         },
+
+        // --- КОПИРОВАНИЕ В БУФЕР ОБМЕНА ---
         fallbackCopy: function(html, plain) {
             let handler = function(e) {
                 e.clipboardData.setData('text/html', html);
@@ -732,6 +742,7 @@ var app = new Vue({
             this.showNotification('КП скопировано в буфер обмена!');
             this.saveCurrentToHistory();
         },
+
         loadFromHistory: function(record) {
             if (this.savedItems.length > 0) {
                 if (!confirm('Текущая таблица будет заменена. Продолжить?')) return;
