@@ -16,13 +16,13 @@ var app = new Vue({
         includeVat: true,
 
         // Справочники из папки data/
-        managers: APP_MANAGERS,
-        config: APP_CONFIG,
-        goods: APP_GOODS,
-        colors: APP_COLORS,
-        toners: APP_TONERS,
-        papers: APP_PAPERS,
-        sizes: APP_SIZES,
+        managers: typeof APP_MANAGERS !== 'undefined' ? APP_MANAGERS : [],
+        config: typeof APP_CONFIG !== 'undefined' ? APP_CONFIG : {},
+        goods: typeof APP_GOODS !== 'undefined' ? APP_GOODS : {},
+        colors: typeof APP_COLORS !== 'undefined' ? APP_COLORS : {},
+        toners: typeof APP_TONERS !== 'undefined' ? APP_TONERS : {},
+        papers: typeof APP_PAPERS !== 'undefined' ? APP_PAPERS : {},
+        sizes: typeof APP_SIZES !== 'undefined' ? APP_SIZES : {},
 
         // Авторизация
         selectedManagerId: 'm_igor',
@@ -227,6 +227,7 @@ var app = new Vue({
         },
         laminations: function() {
             let c = this.config;
+            if (!c || Object.keys(c).length === 0) return {};
             return {
                 'none': { name: 'Без припресса / ламинации', price: 0 },
                 'press_matt_1_0': { name: 'Матовый припресс 1+0', price: c.press_matt_sra3 },
@@ -271,12 +272,15 @@ var app = new Vue({
             return this.selected.presentation_blocks.some(b => b.paper === 'custom');
         },
         layout: function() {
+            if (typeof CalcEngine === 'undefined') return null;
             return CalcEngine.calcLayoutForSpec(this.selected, this.config, this.papers, this.sizes, this.laminations);
         },
         result_price: function() {
+            if (typeof CalcEngine === 'undefined') return { doesNotFit: false, one_total: 0, total: 0, productionCost: 0, productionCostWithTax: 0 };
             return CalcEngine.calcPriceForSpec(this.selected, this.config, this.papers, this.sizes, this.colors, this.laminations);
         },
         delivery_time: function() {
+            if (typeof CalcEngine === 'undefined') return '';
             return CalcEngine.calcDeliveryTimeForSpec(this.selected);
         },
         calendarClicheArea: function() {
@@ -287,10 +291,12 @@ var app = new Vue({
             return (((w + 10) * (h + 10)) / 100).toFixed(1);
         },
         calendarClicheCost: function() {
+            if (typeof window.ProductModules === 'undefined') return 0;
             let mod = window.ProductModules['calendar'];
             return mod ? mod.calcClicheCost(this.selected) : 0;
         },
         spec_size: function() {
+            if (!this.sizes || Object.keys(this.sizes).length === 0) return '';
             if (this.selected.good === 'bag') {
                 return this.sizes.bag[this.selected.bag_size].name;
             } else if (this.selected.good === 'calendar') {
@@ -325,7 +331,7 @@ var app = new Vue({
             if (this.selected.paper === 'custom') {
                 return `Своя бумага (${this.selected.custom_paper_width}x${this.selected.custom_paper_height} мм)`;
             }
-            return this.papers[this.selected.paper] ? this.papers[this.selected.paper].name : '';
+            return this.papers && this.papers[this.selected.paper] ? this.papers[this.selected.paper].name : '';
         }
     },
     methods: {
@@ -390,7 +396,7 @@ var app = new Vue({
                 alert('Невозможно добавить позицию: изделие не помещается на лист!');
                 return;
             }
-            let title = this.goods[this.selected.good].name;
+            let title = this.goods[this.selected.good] ? this.goods[this.selected.good].name : 'Позиция';
             if (this.selected.good === 'pad') {
                 title = 'Блокнот';
             } else if (this.selected.good === 'presentation') {
@@ -452,7 +458,7 @@ var app = new Vue({
                 return;
             }
 
-            let title = this.goods[this.selected.good].name;
+            let title = this.goods[this.selected.good] ? this.goods[this.selected.good].name : 'Позиция';
             if (this.selected.good === 'pad') {
                 title = 'Блокнот';
             } else if (this.selected.good === 'presentation') {
@@ -519,12 +525,15 @@ var app = new Vue({
             });
             this.showNotification('Добавлена строка. Введите параметры и срок вручную!');
         },
+
+        // ИСПРАВЛЕНИЕ ЗДЕСЬ: Методы onCellBlur и onDescBlur
         onCellBlur: function(evt, idx, field) {
             let val = evt.target.innerText.trim();
             let it = this.savedItems[idx];
             let rate = this.config.vat_rate || 1.16;
 
             if (field === 'circulation' || field === 'one_total') {
+                // Очистка от пробелов и замена запятой на точку для правильного парсинга
                 let num = parseFloat(val.replace(/\s+/g, '').replace(',', '.')) || 0;
                 it[field] = num;
                 it.total = Math.round(it.circulation * it.one_total);
@@ -540,8 +549,10 @@ var app = new Vue({
             }
         },
         onDescBlur: function(evt, idx) {
+            // Для описания сохраняем HTML (включая <br> от Enter)
             this.savedItems[idx].desc = evt.target.innerHTML;
         },
+
         removeItem: function(idx) {
             if (this.editingIndex === idx) this.editingIndex = null;
             this.savedItems.splice(idx, 1);
@@ -689,7 +700,7 @@ var app = new Vue({
             setTimeout(() => { this.showToast = false; }, 2500);
         },
         setDefaultSize: function() {
-            if (this.sizes[this.selected.good]) {
+            if (this.sizes && this.sizes[this.selected.good]) {
                 this.selected.size = Object.keys(this.sizes[this.selected.good])[0];
             }
             this.selected.lamination = 'none';
