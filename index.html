@@ -453,7 +453,7 @@
                                         </div>
                                         <div class="col-6" v-if="selected.block_toner !== 'none'">
                                             <div class="input-group input-group-sm">
-                                                <input type="number" class="form-control" v-model.number="selected.block_toners_usd" min="0" placeholder="USD на тираж">
+                                                <input type="number" class="form-control" v-model.number="selected.block_toners_usd" min="0" step="any" placeholder="USD на тираж">
                                                 <div class="input-group-append"><span class="input-group-text">$</span></div>
                                             </div>
                                         </div>
@@ -496,7 +496,10 @@
                                     <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.cover_lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-4 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="selected.cover_toner"><option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-4 mt-2"><small>Плоттерная резка</small><select class="form-control form-control-sm" v-model="selected.cover_plotter_cut"><option value="none">Без резки</option><option value="plotter">Плоттер</option><option value="plotter_perf">С перфорацией</option></select></div>
-                                    <div class="col-4 mt-2" v-if="selected.cover_toner !== 'none'"><small>Расход тонера ($)</small><input type="number" class="form-control form-control-sm" v-model.number="selected.cover_toner_usd"></div>
+                                    <div class="col-4 mt-2" v-if="selected.cover_toner !== 'none'">
+                                        <small>Расход тонера ($) на ВЕСЬ тираж:</small>
+                                        <input type="number" class="form-control form-control-sm" v-model.number="selected.cover_toner_usd" step="any" placeholder="0.00">
+                                    </div>
                                 </div>
 
                                 <div class="section-title text-primary mt-3">Настройки задней обложки / подложки (1 лист)</div>
@@ -506,7 +509,10 @@
                                     <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.back_cover_lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-4 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="selected.back_cover_toner"><option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-4 mt-2"><small>Плоттерная резка</small><select class="form-control form-control-sm" v-model="selected.back_cover_plotter_cut"><option value="none">Без резки</option><option value="plotter">Плоттер</option><option value="plotter_perf">С перфорацией</option></select></div>
-                                    <div class="col-4 mt-2" v-if="selected.back_cover_toner !== 'none'"><small>Расход тонера ($)</small><input type="number" class="form-control form-control-sm" v-model.number="selected.back_cover_toner_usd"></div>
+                                    <div class="col-4 mt-2" v-if="selected.back_cover_toner !== 'none'">
+                                        <small>Расход тонера ($) на ВЕСЬ тираж:</small>
+                                        <input type="number" class="form-control form-control-sm" v-model.number="selected.back_cover_toner_usd" step="any" placeholder="0.00">
+                                    </div>
                                 </div>
                             </div>
 
@@ -528,7 +534,10 @@
                                     <div class="col-6"><small>Бумага</small><paper-selector v-model="block.paper" :papers="papers"></paper-selector></div>
                                     <div class="col-6 mt-2"><small>Ламинация</small><select class="form-control form-control-sm" v-model="block.lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-3 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="block.toner"><option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option></select></div>
-                                    <div class="col-3 mt-2" v-if="block.toner !== 'none'"><small>Расход ($)</small><input type="number" class="form-control form-control-sm" v-model.number="block.toner_usd"></div>
+                                    <div class="col-3 mt-2" v-if="block.toner !== 'none'">
+                                        <small>Расход ($) на ВЕСЬ тираж:</small>
+                                        <input type="number" class="form-control form-control-sm" v-model.number="block.toner_usd" step="any" placeholder="0.00">
+                                    </div>
                                 </div>
                             </div>
                             <button class="btn btn-sm btn-success ml-1" @click="addBlock" v-if="!selected.presentation_only_block">+ Добавить блок</button>
@@ -556,21 +565,29 @@
                     </td>
                 </tr>
 
+                <!-- БЛОК СПЕЦТОНЕРОВ -->
                 <tr class="bg-light" v-if="selected.good !== 'presentation' && selected.good !== 'pad' && (selected.good === 'brochure' || selected.good === 'envelope' || selected.good === 'sticker' || selected.good === 'bag' || selected.good === 'calendar' || showAdvancedOptions)">
                     <td colspan="3">
                         <div class="row">
                             <div class="col-md-6">
-                                <label class="font-weight-bold text-info">Спецтонер 1</label>
+                                <label class="font-weight-bold text-info">Спецтонер 1 (В основной прогон)</label>
+                                <small class="d-block text-muted mb-2" v-if="selected.good === 'brochure'">Указывается только для обложки</small>
                                 <select class="form-control form-control-sm mb-2" v-model="selected.toner1">
                                     <option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option>
                                 </select>
-                                <div class="input-group input-group-sm mb-1" v-if="selected.toner1 !== 'none'">
-                                    <input type="number" class="form-control" v-model.number="selected.toner1_usd" min="0" placeholder="USD на тираж">
-                                    <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                <div class="row" v-if="selected.toner1 !== 'none'">
+                                    <div class="col-12 mt-1">
+                                        <small>Расход тонера (USD) на ВЕСЬ тираж:</small>
+                                        <div class="input-group input-group-sm mb-1">
+                                            <input type="number" class="form-control" v-model.number="selected.toner1_usd" min="0" step="any" placeholder="0.00">
+                                            <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6 border-left">
                                 <label class="font-weight-bold text-danger">Дополнительный прогон</label>
+                                <small class="d-block text-muted mb-2" v-if="selected.good === 'brochure'">Указывается только для обложки</small>
                                 <div class="custom-control custom-checkbox mt-1 mb-2">
                                     <input type="checkbox" class="custom-control-input" id="extraRunCheck" v-model="selected.add_extra_run">
                                     <label class="custom-control-label" for="extraRunCheck">Включить доп. прогон</label>
@@ -579,9 +596,14 @@
                                     <select class="form-control form-control-sm mb-2" v-model="selected.toner2">
                                         <option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option>
                                     </select>
-                                    <div class="input-group input-group-sm mb-1" v-if="selected.toner2 !== 'none'">
-                                        <input type="number" class="form-control" v-model.number="selected.toner2_usd" min="0" placeholder="USD на тираж">
-                                        <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                    <div class="row" v-if="selected.toner2 !== 'none'">
+                                        <div class="col-12">
+                                            <small>Расход тонера (USD) на ВЕСЬ тираж:</small>
+                                            <div class="input-group input-group-sm mb-1">
+                                                <input type="number" class="form-control" v-model.number="selected.toner2_usd" min="0" step="any" placeholder="0.00">
+                                                <div class="input-group-append"><span class="input-group-text">$</span></div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -593,14 +615,14 @@
                     <td colspan="3">
                         <div class="row">
                             <div class="col-6" v-if="selected.good === 'business-card' || selected.good === 'leaflet'">
-                                <small class="font-weight-bold">Тип резки:</small>
+                                <small class="font-weight-bold text-muted">Тип резки:</small>
                                 <select class="form-control form-control-sm" v-model="selected.cut_type">
                                     <option value="double">Двойной рез (с вылетами 3 мм)</option>
                                     <option value="single">Одинарный рез (без вылетов)</option>
                                 </select>
                             </div>
                             <div class="col-6" v-if="selected.good === 'leaflet' || selected.good === 'sticker'">
-                                <small class="font-weight-bold">Плоттерная резка:</small>
+                                <small class="font-weight-bold text-muted">Плоттерная резка:</small>
                                 <select class="form-control form-control-sm" v-model="selected.plotter_cut">
                                     <option value="none">Без резки</option>
                                     <option value="plotter">Плоттерная резка</option>
@@ -608,7 +630,7 @@
                                 </select>
                             </div>
                             <div class="col-6" v-if="selected.good === 'business-card' || selected.good === 'leaflet'">
-                                <small class="font-weight-bold">Постпечать:</small>
+                                <small class="font-weight-bold text-muted">Постпечать:</small>
                                 <div class="custom-control custom-checkbox mt-1">
                                     <input type="checkbox" class="custom-control-input" id="roundCorners" v-model="selected.round_corners">
                                     <label class="custom-control-label" for="roundCorners">Скругление углов</label>
@@ -635,8 +657,8 @@
                             Ножка: <strong>{{ result_price.cal ? result_price.cal.standTitle : '' }}</strong>
                         </div>
 
-                        <!-- РАСКЛАДКА СТАНДАРТНАЯ (ВИЗИТКИ, ЛИСТОВКИ, СТИКЕРЫ) -->
-                        <div v-if="selected.good !== 'brochure' && selected.good !== 'envelope' && selected.good !== 'presentation' && selected.good !== 'pad' && selected.good !== 'bag' && selected.good !== 'calendar'">
+                        <!-- СТАНДАРТНАЯ РАСКЛАДКА (ВИЗИТКИ, ЛИСТОВКИ, СТИКЕРЫ) -->
+                        <div v-else-if="selected.good !== 'brochure' && selected.good !== 'envelope' && selected.good !== 'presentation' && selected.good !== 'pad' && selected.good !== 'bag' && selected.good !== 'calendar'">
                             Помещается <strong>{{ layout.base.yield }}</strong> шт. на лист 
                             <small class="text-danger font-weight-bold" v-if="layout.base.yield === 0">(Не помещается на лист!)</small><br/>
                         </div>
@@ -654,6 +676,7 @@
                             </span>
                         </div>
 
+                        <!-- РАСКЛАДКА ПРЕЗЕНТАЦИЙ И БЛОКНОТОВ -->
                         <div v-if="selected.good === 'presentation' || selected.good === 'pad'">
                             <span v-if="!selected.presentation_only_block">
                                 <strong>Обложка:</strong> {{ layout.presentation.cover_yield }} на лист 
@@ -669,7 +692,7 @@
 
                         <hr class="my-2">
                         <div class="text-secondary" style="font-size: 0.9em;">
-                            <strong>Общий расход листов на позицию:</strong> {{ result_price.totalPapersCount }} шт.<br/>
+                            <strong>Общий расход листов (штук):</strong> {{ result_price.totalPapersCount }} шт.<br/>
                             
                             <!-- СЕБЕСТОИМОСТЬ ПАКЕТА -->
                             <div v-if="selected.good === 'bag'">
@@ -688,10 +711,10 @@
 
                             <!-- СЕБЕСТОИМОСТЬ КАЛЕНДАРЯ -->
                             <div v-else-if="selected.good === 'calendar'">
-                                <strong>Перекидной блок:</strong> {{ result_price.cal.blockSra3Sheets }} л. SRA3 (всего {{ result_price.cal.totalBlockCost }} тг)<br/>
-                                <strong>Ножка:</strong> {{ result_price.cal.standTitle }} (расход: {{ result_price.cal.standProdCostPerItem }} тг/шт)<br/>
-                                <span v-if="!result_price.cal.isHardCover"><strong>Сборка на металлическую пружину:</strong> {{ config.calendar_bind }} тг/шт</span>
-                                <span v-else class="text-success font-weight-bold">Сборка и металлическая пружина уже входят в стоимость ножки (без доплаты)</span>
+                                <strong>Перекидной блок:</strong> {{ result_price.cal ? result_price.cal.blockSra3Sheets : 0 }} л. SRA3 (всего {{ result_price.cal ? result_price.cal.totalBlockCost : 0 }} тг)<br/>
+                                <strong>Ножка:</strong> {{ result_price.cal ? result_price.cal.standTitle : '' }} (расход: {{ result_price.cal ? result_price.cal.standProdCostPerItem : 0 }} тг/шт)<br/>
+                                <span v-if="result_price.cal && !result_price.cal.isHardCover"><strong>Сборка на металлическую пружину:</strong> {{ config.calendar_bind }} тг/шт</span>
+                                <span v-else-if="result_price.cal && result_price.cal.isHardCover" class="text-success font-weight-bold">Сборка и металлическая пружина уже входят в стоимость ножки (без доплаты)</span>
                             </div>
 
                             <!-- СТАНДАРТНЫЙ ВЫВОД (ВИЗИТКИ, ЛИСТОВКИ, СТИКЕРЫ) -->
@@ -700,32 +723,136 @@
                                 <ul class="mb-1 pl-3" style="font-size: 0.95em;">
                                     <li>Бумага: {{ result_price.paperPrice }} тг</li>
                                     <li>Печать (основная): {{ result_price.colorPrice }} тг</li>
-                                    <li v-if="result_price.laminationPrice > 0">Припресс/Ламинация: {{ result_price.laminationPrice }} тг</li>
+                                    <li v-if="result_price.laminationPrice > 0">Ламинация/Припресс: {{ result_price.laminationPrice }} тг</li>
+                                    
+                                    <!-- СПЕЦТОНЕР 1 -->
+                                    <li v-if="selected.toner1 && selected.toner1 !== 'none'">
+                                        Спецтонер 1:
+                                        <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны (2×): {{ (result_price.toner1_runs_cost || ((config.run_color || 44) * 2)) }} тг/лист</li>
+                                            <li v-if="selected.toner1_usd > 0">Тонер (на тираж): {{ (result_price.toner1_usd_lump || Math.round(selected.toner1_usd * (config.usd_rate || 500))) }} тг</li>
+                                        </ul>
+                                    </li>
+                                    
+                                    <!-- ДОП. ПРОГОН -->
+                                    <li v-if="selected.add_extra_run && selected.toner2 === 'none'">
+                                        Доп. прогон (CMYK): {{ result_price.extra_run_cost || (config.run_color || 44) }} тг/лист
+                                    </li>
+                                    
+                                    <!-- СПЕЦТОНЕР 2 -->
+                                    <li v-if="selected.add_extra_run && selected.toner2 && selected.toner2 !== 'none'">
+                                        Спецтонер 2:
+                                        <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны (2×): {{ (result_price.toner2_runs_cost || ((config.run_color || 44) * 2)) }} тг/лист</li>
+                                            <li v-if="selected.toner2_usd > 0">Тонер (на тираж): {{ (result_price.toner2_usd_lump || Math.round(selected.toner2_usd * (config.usd_rate || 500))) }} тг</li>
+                                        </ul>
+                                    </li>
+                                    
                                     <li v-if="result_price.plotterCost > 0">Плоттер: {{ result_price.plotterCost }} тг</li>
                                     <li v-if="selected.round_corners">Скругление углов</li>
                                 </ul>
                             </div>
                             
+                            <!-- СЕБЕСТОИМОСТЬ КОНВЕРТОВ -->
                             <div v-if="selected.good === 'envelope'">
                                 <strong>Себестоимость 1 шт:</strong> {{ result_price.totalCostPerSheet }} тг
                                 <ul class="mb-1 pl-3" style="font-size: 0.95em;">
                                     <li>Конверт: {{ result_price.paperPrice }} тг</li>
-                                    <li>Печать: {{ result_price.colorPrice }} тг</li>
+                                    <li>Печать (базовая): {{ result_price.colorPrice }} тг</li>
+                                    
+                                    <!-- СПЕЦТОНЕР 1 -->
+                                    <li v-if="selected.toner1 && selected.toner1 !== 'none'">
+                                        Спецтонер 1:
+                                        <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны (2×): {{ (result_price.toner1_runs_cost || ((selected.envelope_size === 'small' ? (config.run_small || 25) : (config.run_color || 44)) * 2)) }} тг/шт</li>
+                                            <li v-if="selected.toner1_usd > 0">Тонер (на тираж): {{ (result_price.toner1_usd_lump || Math.round(selected.toner1_usd * (config.usd_rate || 500))) }} тг</li>
+                                        </ul>
+                                    </li>
+                                    
+                                    <!-- ДОП. ПРОГОН -->
+                                    <li v-if="selected.add_extra_run && selected.toner2 === 'none'">
+                                        Доп. прогон (CMYK): {{ result_price.extra_run_cost || (selected.envelope_size === 'small' ? (config.run_small || 25) : (config.run_color || 44)) }} тг/шт
+                                    </li>
+                                    
+                                    <!-- СПЕЦТОНЕР 2 -->
+                                    <li v-if="selected.add_extra_run && selected.toner2 && selected.toner2 !== 'none'">
+                                        Спецтонер 2:
+                                        <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны (2×): {{ (result_price.toner2_runs_cost || ((selected.envelope_size === 'small' ? (config.run_small || 25) : (config.run_color || 44)) * 2)) }} тг/шт</li>
+                                            <li v-if="selected.toner2_usd > 0">Тонер (на тираж): {{ (result_price.toner2_usd_lump || Math.round(selected.toner2_usd * (config.usd_rate || 500))) }} тг</li>
+                                        </ul>
+                                    </li>
                                 </ul>
                             </div>
 
+                            <!-- СЕБЕСТОИМОСТЬ БРОШЮР -->
                             <div v-if="selected.good === 'brochure'">
                                 <div class="mb-2">
-                                    <strong>Обложка ({{ result_price.coverSheets }} л.):</strong> {{ result_price.coverCostPerSheet }} тг/л
+                                    <strong>Обложка ({{ result_price.coverSheets }} листов по {{ result_price.coverCostPerSheet }} тг):</strong>
+                                    <ul class="mb-1 pl-3" style="font-size: 0.95em;">
+                                        <li>Бумага: {{ result_price.coverPaperPrice }} тг</li>
+                                        <li>Печать (основная): {{ result_price.coverColorPrice }} тг</li>
+                                        <li v-if="result_price.coverLaminationPrice > 0">Припресс: {{ result_price.coverLaminationPrice }} тг</li>
+                                        <li v-if="result_price.coverPlotterCost > 0">Плоттерная резка: {{ result_price.coverPlotterCost }} тг</li>
+                                        
+                                        <li v-if="selected.toner1 && selected.toner1 !== 'none'">
+                                            Спецтонер 1:
+                                            <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                                <li>Прогоны (2×): {{ (result_price.toner1_runs_cost || ((config.run_color || 44) * 2)) }} тг/лист</li>
+                                                <li v-if="selected.toner1_usd > 0">Тонер (на тираж): {{ (result_price.toner1_usd_lump || Math.round(selected.toner1_usd * (config.usd_rate || 500))) }} тг</li>
+                                            </ul>
+                                        </li>
+                                        
+                                        <li v-if="selected.add_extra_run && selected.toner2 === 'none'">
+                                            Доп. прогон (CMYK): {{ result_price.extra_run_cost || (config.run_color || 44) }} тг/лист
+                                        </li>
+                                        
+                                        <li v-if="selected.add_extra_run && selected.toner2 && selected.toner2 !== 'none'">
+                                            Спецтонер 2:
+                                            <ul class="mb-0 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                                <li>Прогоны (2×): {{ (result_price.toner2_runs_cost || ((config.run_color || 44) * 2)) }} тг/лист</li>
+                                                <li v-if="selected.toner2_usd > 0">Тонер (на тираж): {{ (result_price.toner2_usd_lump || Math.round(selected.toner2_usd * (config.usd_rate || 500))) }} тг</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
                                 </div>
                                 <div v-if="selected.pages_count > 4">
-                                    <strong>Блок ({{ result_price.blockSheets }} л.):</strong> {{ result_price.blockCostPerSheet }} тг/л
+                                    <strong>Внутренний блок ({{ result_price.blockSheets }} листов по {{ result_price.blockCostPerSheet }} тг):</strong>
+                                    <ul class="mb-1 pl-3" style="font-size: 0.95em;">
+                                        <li>Бумага: {{ result_price.blockPaperPrice }} тг</li>
+                                        <li>Печать (основная): {{ result_price.blockColorPrice }} тг</li>
+                                        <li v-if="result_price.blockLaminationPrice > 0">Припресс: {{ result_price.blockLaminationPrice }} тг</li>
+                                    </ul>
+                                    <div v-if="selected.block_toner !== 'none'" class="mt-1">
+                                        <strong>Спецтонер блока:</strong>
+                                        <ul class="mb-1 pl-3 text-muted" style="font-size: 0.9em; list-style-type: circle;">
+                                            <li>Прогоны: {{ (result_price.blockSheets * (config.run_color || 44) * 2) }} тг (за весь тираж блока)</li>
+                                            <li v-if="selected.block_toners_usd > 0">Тонер (на тираж): {{ (result_price.block_toners_usd_converted || Math.round(selected.block_toners_usd * (config.usd_rate || 500))) }} тг</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- СЕБЕСТОИМОСТЬ ПРЕЗЕНТАЦИЙ И БЛОКНОТОВ (ВОССТАНОВЛЕНО ИЗ V6.6) -->
+                            <div v-if="selected.good === 'presentation' || selected.good === 'pad'">
+                                <div v-if="result_price.pres">
+                                    <div v-if="!selected.presentation_only_block">
+                                        <strong>Обложка ({{ result_price.pres.coverSheets || 0 }} л.):</strong> {{ result_price.pres.coverCostPerSheet || 0 }} тг/л
+                                        <span class="text-danger" v-if="result_price.pres.cTonerUsdLump > 0">+ {{ result_price.pres.cTonerUsdLump }} тг (тонер)</span>
+                                        <span class="text-info" v-if="result_price.pres.coverPlotterCost > 0"> (вкл. плоттер: {{ result_price.pres.coverPlotterCost }} тг/л)</span><br/>
+                                        
+                                        <strong>Задняя обложка ({{ result_price.pres.backSheets || 0 }} л.):</strong> {{ result_price.pres.backCostPerSheet || 0 }} тг/л
+                                        <span class="text-danger" v-if="result_price.pres.bcTonerUsdLump > 0">+ {{ result_price.pres.bcTonerUsdLump }} тг (тонер)</span>
+                                        <span class="text-info" v-if="result_price.pres.backPlotterCost > 0"> (вкл. плоттер: {{ result_price.pres.backPlotterCost }} тг/л)</span><br/>
+                                    </div>
+                                    <strong>Внутренние блоки (всего {{ result_price.pres.blockSra3Sheets || 0 }} л. SRA3):</strong> {{ result_price.pres.totalBlocksCost || 0 }} тг<br/>
+                                    <strong>Сборка на пружину:</strong> {{ result_price.pres.bindCostPerItem || 0 }} тг/шт (Итого за сборку: {{ result_price.pres.totalBindCost || 0 }} тг)
                                 </div>
                             </div>
 
                             <hr class="my-1 border-secondary">
-                            <div><strong>Чистая себестоимость текущего тиража:</strong> {{ result_price.productionCost }} тг</div>
-                            <div class="mt-1 text-dark"><strong>Себестоимость с учётом налогов (тек. тираж):</strong> {{ result_price.productionCostWithTax }} тг</div>
+                            <div><strong>Чистая себестоимость тиража:</strong> {{ result_price.productionCost }} тг</div>
+                            <div class="mt-1 text-dark"><strong>Себестоимость с учётом налогов:</strong> {{ result_price.productionCostWithTax }} тг</div>
 
                             <!-- ОБЩАЯ РАСХОДНАЯ ЧАСТЬ ВСЕГО КП -->
                             <div v-if="nonManualItemsCount > 0" class="mt-3 p-2 bg-white border border-primary rounded shadow-sm">
@@ -770,10 +897,11 @@
                     </div>
                     <div class="d-flex align-items-center">
                         <div>
-						<button class="btn btn-sm btn-info shadow-sm mr-2 text-white" @click="addManualItem"><strong>+ Своя позиция</strong></button>
+                            <button class="btn btn-sm btn-info shadow-sm mr-2 text-white" @click="addManualItem"><strong>+ Своя позиция</strong></button>
+                            <button class="btn btn-sm btn-success shadow-sm mr-2" @click="saveCurrentToHistory" :disabled="savedItems.length === 0">☁️ Сохранить в историю</button>
                             <button class="btn btn-sm btn-outline-danger shadow-sm mr-2" @click="clearTable" v-if="savedItems.length > 0">Очистить всё</button>
                             <button class="btn btn-sm btn-danger shadow-sm mr-2" @click="exportToPDF" :disabled="savedItems.length === 0">📄 Скачать PDF</button>
-                            <button class="btn btn-sm btn-outline-primary shadow-sm" @click="copyTable" :disabled="savedItems.length === 0">📋 Скопировать таблицу (Word)</button>
+                            <button class="btn btn-sm btn-outline-primary shadow-sm" @click="copyTable" :disabled="savedItems.length === 0">📋 Скопировать (Word)</button>
                         </div>
                         <div class="custom-control custom-checkbox bg-white border rounded shadow-sm py-1 pr-2 ml-1">
                             <input type="checkbox" class="custom-control-input" id="vatToggleCheck" v-model="includeVat">
@@ -801,36 +929,15 @@
                             </thead>
                             <tbody>
                                 <tr v-for="(item, idx) in savedItems" :key="item.id" :class="{'bg-warning': editingIndex === idx}">
-                                    <!-- 1. Номер позиции -->
                                     <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center;" class="clickable-row-num" @click="editItem(idx)">
                                         {{ idx + 1 }}
                                     </td>
-                                    
-                                    <!-- 2. Наименование -->
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'title')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none; white-space: pre-wrap;" v-text="item.title">
-                                    </td>
-                                    
-                                    <!-- 3. Данные (Описание) -->
-                                    <td contenteditable="true" @blur="onDescBlur($event, idx)" class="editable-cell" valign="top" style="border: 1px solid #000; padding: 6px; outline: none;" v-html="item.desc">
-                                    </td>
-                                    
-                                    <!-- 4. Кол-во -->
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'circulation')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.circulation">
-                                    </td>
-                                    
-                                    <!-- 5. Стоимость за единицу -->
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'one_total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.one_total">
-                                    </td>
-                                    
-                                    <!-- 6. Итого -->
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none;" v-text="item.total">
-                                    </td>
-                                    
-                                    <!-- 7. Срок -->
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'delivery')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.delivery">
-                                    </td>
-                                    
-                                    <!-- 8. Действия -->
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'title')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none; white-space: pre-wrap;" v-text="item.title"></td>
+                                    <td contenteditable="true" @blur="onDescBlur($event, idx)" class="editable-cell" valign="top" style="border: 1px solid #000; padding: 6px; outline: none;" v-html="item.desc"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'circulation')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.circulation"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'one_total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.one_total"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none;" v-text="item.total"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'delivery')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.delivery"></td>
                                     <td align="center" valign="middle" style="border: 1px solid #000; padding: 4px; text-align: center; white-space: nowrap;">
                                         <button class="btn btn-primary btn-sm btn-action-row mr-1" @click="editItem(idx)">✏️</button>
                                         <button class="btn btn-outline-danger btn-sm btn-action-row" @click="removeItem(idx)">✕</button>
@@ -855,6 +962,11 @@
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0 font-weight-bold text-dark">📋 История КП: <span class="text-primary">{{ currentManager.name }}</span></h5>
                     <div>
+                        <!-- КНОПКИ ЭКСПОРТА И ИМПОРТА -->
+                        <button class="btn btn-sm btn-outline-success mr-2" @click="exportHistoryJson" :disabled="userHistory.length === 0">📤 Экспорт (JSON)</button>
+                        <button class="btn btn-sm btn-outline-secondary mr-2" @click="$refs.historyFileInput.click()">📥 Импорт (JSON)</button>
+                        <input type="file" ref="historyFileInput" style="display: none;" accept=".json" @change="importHistoryJson">
+
                         <button class="btn btn-sm btn-outline-info mr-2" @click="syncWithGoogleSheets" :disabled="isSyncing || !googleScriptUrl">🔄 {{ isSyncing ? 'Загрузка...' : 'Обновить' }}</button>
                         <button class="btn btn-sm btn-outline-danger" @click="clearHistory" v-if="userHistory.length > 0">Очистить историю</button>
                     </div>
@@ -916,12 +1028,12 @@
 <script src="js/engine.js"></script>
 <script src="js/parsers.js"></script>
 
-<!-- === ДОБАВЛЯЕМ БИБЛИОТЕКУ И ВАШ НОВЫЙ ФАЙЛ === -->
+<!-- 5. PDF -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 <script src="js/pdf.js"></script>
 
-<!-- 5. UI-компоненты и приложение -->
+<!-- 6. UI-компоненты и приложение -->
 <script src="components/paper-selector.js"></script>
 <script src="js/app.js"></script>
 
