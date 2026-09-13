@@ -108,7 +108,7 @@ var app = new Vue({
     watch: {
         includeVat: function(newVal) {
             let rate = this.config.vat_rate || 1.16;
-            this.savedItems.forEach(item => {
+            this.savedItems.forEach(function(item) {
                 if (!item.base_total) {
                     item.base_total = item.total;
                     item.base_one_total = item.one_total;
@@ -127,7 +127,7 @@ var app = new Vue({
     created: function() {
         let savedUser = localStorage.getItem('poly_calc_manager');
         if (savedUser) {
-            let found = this.managers.find(m => m.id === savedUser);
+            let found = this.managers.find(function(m) { return m.id === savedUser; });
             if (found) {
                 this.currentManager = found;
                 this.isAuthenticated = true;
@@ -141,12 +141,12 @@ var app = new Vue({
             let d = new Date();
             let day = String(d.getDate()).padStart(2, '0');
             let month = String(d.getMonth() + 1).padStart(2, '0');
-            return `${day}.${month}.${d.getFullYear()}`;
+            return day + '.' + month + '.' + d.getFullYear();
         },
         filteredHistory: function() {
             let q = this.historySearch.trim().toLowerCase();
             if (!q) return this.userHistory;
-            return this.userHistory.filter(h => {
+            return this.userHistory.filter(function(h) {
                 let comp = (h.company || '').trim().toLowerCase();
                 let date = (h.date || '').toLowerCase();
                 let summary = (h.summary || '').toLowerCase();
@@ -154,17 +154,18 @@ var app = new Vue({
             });
         },
         grandTotal: function() {
-            return this.savedItems.reduce((sum, it) => sum + (Number(it.total) || 0), 0);
+            return this.savedItems.reduce(function(sum, it) { return sum + (Number(it.total) || 0); }, 0);
         },
         nonManualItems: function() {
-            return this.savedItems.filter(it => !it.isManual && it.specData);
+            return this.savedItems.filter(function(it) { return !it.isManual && it.specData; });
         },
         nonManualItemsCount: function() {
             return this.nonManualItems.length;
         },
         grandProductionCost: function() {
             let total = 0;
-            for (let it of this.nonManualItems) {
+            for (let i = 0; i < this.nonManualItems.length; i++) {
+                let it = this.nonManualItems[i];
                 if (it.productionCost && it.productionCost > 0) {
                     total += Number(it.productionCost);
                 } else if (it.specData) {
@@ -176,7 +177,8 @@ var app = new Vue({
         },
         grandProductionCostWithTax: function() {
             let total = 0;
-            for (let it of this.nonManualItems) {
+            for (let i = 0; i < this.nonManualItems.length; i++) {
+                let it = this.nonManualItems[i];
                 if (it.productionCostWithTax && it.productionCostWithTax > 0) {
                     total += Number(it.productionCostWithTax);
                 } else if (it.specData) {
@@ -189,7 +191,8 @@ var app = new Vue({
         maxDeliveryTime: function() {
             if (this.savedItems.length === 0) return '-';
             let maxUpper = -1, maxLower = -1, bestRange = '', hasClarify = false;
-            for (let it of this.savedItems) {
+            for (let i = 0; i < this.savedItems.length; i++) {
+                let it = this.savedItems[i];
                 let d = (it.delivery || '').trim();
                 if (!d || d === '-') continue;
                 if (d.toLowerCase().includes('уточнить')) { hasClarify = true; continue; }
@@ -197,7 +200,7 @@ var app = new Vue({
                 if (match) {
                     let low = parseInt(match[1]), high = parseInt(match[2]);
                     if (high > maxUpper || (high === maxUpper && low > maxLower)) {
-                        maxUpper = high; maxLower = low; bestRange = `${low}-${high}`;
+                        maxUpper = high; maxLower = low; bestRange = low + '-' + high;
                     }
                 } else {
                     let single = parseInt(d);
@@ -207,7 +210,7 @@ var app = new Vue({
                 }
             }
             if (hasClarify && maxUpper === -1) return 'Уточнить у менеджера';
-            if (hasClarify) return bestRange ? `${bestRange} (уточнить)` : 'Уточнить у менеджера';
+            if (hasClarify) return bestRange ? bestRange + ' (уточнить)' : 'Уточнить у менеджера';
             return bestRange || '-';
         },
         available_colors: function() {
@@ -260,19 +263,49 @@ var app = new Vue({
             return res;
         },
         hasCustomBlockPaper: function() {
-            return this.selected.presentation_blocks.some(b => b.paper === 'custom');
+            return this.selected.presentation_blocks.some(function(b) { return b.paper === 'custom'; });
         },
         layout: function() {
-            if (typeof CalcEngine === 'undefined') return null;
-            return CalcEngine.calcLayoutForSpec(this.selected, this.config, this.papers, this.sizes, this.laminations);
+            let defaultLayout = { 
+                base: { yield: 0 }, 
+                cover: { yield: 0 }, 
+                block: { yield: 0 }, 
+                presentation: { cover_yield: 0, back_cover_yield: 0, blocks_yield: [] } 
+            };
+            if (typeof CalcEngine === 'undefined') return defaultLayout;
+            try {
+                let res = CalcEngine.calcLayoutForSpec(this.selected, this.config, this.papers, this.sizes, this.laminations);
+                return res || defaultLayout;
+            } catch(e) {
+                console.error('Ошибка в layout:', e);
+                return defaultLayout;
+            }
         },
         result_price: function() {
-            if (typeof CalcEngine === 'undefined') return { doesNotFit: false, one_total: 0, total: 0, productionCost: 0, productionCostWithTax: 0 };
-            return CalcEngine.calcPriceForSpec(this.selected, this.config, this.papers, this.sizes, this.colors, this.laminations);
+            let defaultPrice = { 
+                doesNotFit: false, one_total: 0, total: 0, productionCost: 0, productionCostWithTax: 0, 
+                totalCostPerSheet: 0, totalSheetsCost: 0, plotterCost: 0, paperPrice: 0, colorPrice: 0, 
+                laminationPrice: 0, totalPapersCount: 0, coverCostPerSheet: 0, blockCostPerSheet: 0, 
+                coverSheets: 0, blockSheets: 0, 
+                cal: { blockSra3Sheets: 0, totalBlockCost: 0, standTitle: '', standProdCostPerItem: 0, isHardCover: false },
+                pres: { coverSheets: 0, coverCostPerSheet: 0, cTonerUsdLump: 0, coverPlotterCost: 0, backSheets: 0, backCostPerSheet: 0, bcTonerUsdLump: 0, backPlotterCost: 0, totalBlocksCost: 0, blockSra3Sheets: 0, bindCostPerItem: 0, totalBindCost: 0 }
+            };
+            if (typeof CalcEngine === 'undefined') return defaultPrice;
+            try {
+                let res = CalcEngine.calcPriceForSpec(this.selected, this.config, this.papers, this.sizes, this.colors, this.laminations, this.toners);
+                return res || defaultPrice;
+            } catch(e) {
+                console.error('Ошибка в result_price:', e);
+                return defaultPrice;
+            }
         },
         delivery_time: function() {
             if (typeof CalcEngine === 'undefined') return '';
-            return CalcEngine.calcDeliveryTimeForSpec(this.selected);
+            try {
+                return CalcEngine.calcDeliveryTimeForSpec(this.selected) || '';
+            } catch(e) {
+                return '';
+            }
         },
         calendarClicheArea: function() {
             if (this.selected.calendar_cliche_exists) return 0;
@@ -282,15 +315,20 @@ var app = new Vue({
             return (((w + 10) * (h + 10)) / 100).toFixed(1);
         },
         calendarClicheCost: function() {
-            let mod = window.ProductModules ? window.ProductModules['calendar'] : null;
-            return mod ? mod.calcClicheCost(this.selected) : (typeof CalcEngine !== 'undefined' && typeof CalcEngine.calcClicheCost === 'function' ? CalcEngine.calcClicheCost(this.selected) : 0);
+            try {
+                let mod = window.ProductModules ? window.ProductModules['calendar'] : null;
+                return mod ? mod.calcClicheCost(this.selected) : (typeof CalcEngine !== 'undefined' && typeof CalcEngine.calcClicheCost === 'function' ? CalcEngine.calcClicheCost(this.selected) : 0);
+            } catch(e) {
+                return 0;
+            }
         },
         spec_size: function() {
             if (!this.sizes || Object.keys(this.sizes).length === 0) return '';
             if (this.selected.good === 'bag') {
-                return this.sizes.bag[this.selected.bag_size].name;
+                return (this.sizes.bag && this.sizes.bag[this.selected.bag_size]) ? this.sizes.bag[this.selected.bag_size].name : '';
             } else if (this.selected.good === 'calendar') {
-                return this.sizes.calendar[this.selected.size].name + ' (' + this.selected.calendar_sheets + ' листов)';
+                let calName = (this.sizes.calendar && this.sizes.calendar[this.selected.size]) ? this.sizes.calendar[this.selected.size].name : 'А5 настольный';
+                return calName + ' (' + this.selected.calendar_sheets + ' листов)';
             } else if (this.selected.envelope_size === 'small' && this.selected.good === 'envelope') {
                 return 'Конверт (До С4 включительно)';
             } else if (this.selected.good === 'envelope') {
@@ -298,28 +336,24 @@ var app = new Vue({
             } else if (this.selected.good === 'business-card' || ((this.selected.good === 'leaflet' || this.selected.good === 'sticker') && this.selected.size === 'custom')) {
                 return this.selected.custom_width + 'x' + this.selected.custom_height + ' мм';
             } else if (this.selected.good === 'brochure') {
-                return this.sizes.brochure[this.selected.size].name + ' (' + 
-                    (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + 
-                    this.selected.pages_count + ' стр. (включая обложку)';
-            } else if (this.selected.good === 'presentation') {
-                let sCount = this.selected.presentation_only_block ? 0 : 2;
-                for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets);
-                return this.sizes.leaflet[this.selected.size].name + ' (' + 
-                    (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + 
-                    sCount + ' листов';
-            } else if (this.selected.good === 'pad') {
-                let sCount = 2;
-                for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets);
-                return this.sizes.leaflet[this.selected.size].name + ' (' + 
-                    (this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная') + '), ' + 
-                    sCount + ' листов';
+                let brName = (this.sizes.brochure && this.sizes.brochure[this.selected.size]) ? this.sizes.brochure[this.selected.size].name : 'A4';
+                let ori = this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная';
+                return brName + ' (' + ori + '), ' + this.selected.pages_count + ' стр. (включая обложку)';
+            } else if (this.selected.good === 'presentation' || this.selected.good === 'pad') {
+                let sCount = (this.selected.good === 'presentation' && this.selected.presentation_only_block) ? 0 : 2;
+                if (this.selected.presentation_blocks) {
+                    for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets || 0);
+                }
+                let leafName = (this.sizes.leaflet && this.sizes.leaflet[this.selected.size]) ? this.sizes.leaflet[this.selected.size].name : 'A4';
+                let ori = this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная';
+                return leafName + ' (' + ori + '), ' + sCount + ' листов';
             } else {
-                return this.sizes[this.selected.good][this.selected.size].name;
+                return (this.sizes[this.selected.good] && this.sizes[this.selected.good][this.selected.size]) ? this.sizes[this.selected.good][this.selected.size].name : '';
             }
         },
         spec_paper: function() {
             if (this.selected.paper === 'custom') {
-                return `Своя бумага (${this.selected.custom_paper_width}x${this.selected.custom_paper_height} мм)`;
+                return 'Своя бумага (' + this.selected.custom_paper_width + 'x' + this.selected.custom_paper_height + ' мм)';
             }
             return this.papers && this.papers[this.selected.paper] ? this.papers[this.selected.paper].name : '';
         }
@@ -361,19 +395,20 @@ var app = new Vue({
         syncWithGoogleSheets: function() {
             if (!this.googleScriptUrl || !this.currentManager.id) return;
             this.isSyncing = true;
-            fetch(this.googleScriptUrl + '?managerId=' + encodeURIComponent(this.currentManager.id))
-                .then(res => res.json())
+            let url = this.googleScriptUrl + '?managerId=' + encodeURIComponent(this.currentManager.id);
+            fetch(url)
+                .then(function(res) { return res.json(); })
                 .then(res => {
                     if (res.status === 'ok' && res.data) {
                         this.userHistory = res.data;
                         this.saveUserHistory();
                     }
                 })
-                .catch(err => console.error('Ошибка загрузки из Google:', err))
+                .catch(function(err) { console.error('Ошибка загрузки из Google:', err); })
                 .finally(() => { this.isSyncing = false; });
         },
         calcPriceForSpec: function(sel) {
-            return CalcEngine.calcPriceForSpec(sel, this.config, this.papers, this.sizes, this.colors, this.laminations);
+            return CalcEngine.calcPriceForSpec(sel, this.config, this.papers, this.sizes, this.colors, this.laminations, this.toners);
         },
         generatePositionDesc: function() {
             return CalcParsers.generatePositionDesc(
@@ -438,7 +473,7 @@ var app = new Vue({
                 this.showAdvancedOptions = true;
             }
             this.editingIndex = idx;
-            this.showNotification(`Параметры позиции #${idx + 1} загружены!`);
+            this.showNotification('Параметры позиции #' + (idx + 1) + ' загружены!');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         },
         updateItemInTable: function() {
@@ -483,7 +518,7 @@ var app = new Vue({
 
             let savedNum = this.editingIndex + 1;
             this.editingIndex = null;
-            this.showNotification(`Позиция #${savedNum} успешно обновлена!`);
+            this.showNotification('Позиция #' + savedNum + ' успешно обновлена!');
             if (this.$refs.tableSection) {
                 this.$refs.tableSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
@@ -551,103 +586,62 @@ var app = new Vue({
                 this.showNotification('Таблица очищена');
             }
         },
-
-        // --- ГЕНЕРАЦИЯ HTML ДЛЯ PDF И WORD ---
         generateWordTableHtml: function() {
             let comp = this.companyName ? this.companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
-            let title = `КП ${this.currentDateFormatted} ${comp}`;
+            let title = 'КП ' + this.currentDateFormatted + ' ' + comp;
             let vatLabel = this.includeVat ? 'с учетом НДС' : 'без учета НДС';
             
             let rowsHtml = '';
-            this.savedItems.forEach((it, idx) => {
-                rowsHtml += `
-                <tr>
-                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <span>${idx + 1}</span>
-                    </td>
-                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <strong>${it.title}</strong>
-                    </td>
-                    <td align="left" valign="top" style="border: 1px solid #000000; padding: 6px; text-align: left; vertical-align: top; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <span>${it.desc}</span>
-                    </td>
-                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <span>${it.circulation}</span>
-                    </td>
-                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <span>${it.one_total}</span>
-                    </td>
-                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <strong>${it.total}</strong>
-                    </td>
-                    <td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; vertical-align: middle; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
-                        <span>${it.delivery || '-'}</span>
-                    </td>
-                </tr>`;
+            this.savedItems.forEach(function(it, idx) {
+                rowsHtml += '<tr>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + (idx + 1) + '</td>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;"><strong>' + it.title + '</strong></td>' +
+                    '<td align="left" valign="top" style="border: 1px solid #000000; padding: 6px; text-align: left; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + it.desc + '</td>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + it.circulation + '</td>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + it.one_total + '</td>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;"><strong>' + it.total + '</strong></td>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + (it.delivery ? it.delivery : '-') + '</td>' +
+                '</tr>';
             });
 
-            return `
-            <table width="100%" border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000000; font-family: 'Times New Roman', Times, serif; font-size: 13px; color: #000000; text-decoration: none;">
-                <colgroup>
-                    <col width="5%">
-                    <col width="16%">
-                    <col width="34%">
-                    <col width="10%">
-                    <col width="12%">
-                    <col width="12%">
-                    <col width="11%">
-                </colgroup>
-                <thead>
-                    <tr>
-                        <th colspan="7" align="center" style="border: 1px solid #000000; padding: 8px; text-align: center; background-color: #f2f2f2; font-size: 15px; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
-                            <strong>${title}</strong>
-                        </th>
-                    </tr>
-                    <tr style="background-color: #f9f9f9;">
-                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">№</th>
-                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Наименование</th>
-                        <th align="left" style="border: 1px solid #000000; padding: 6px; text-align: left; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Данные</th>
-                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Кол-во / шт</th>
-                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Стоимость за единицу / теңге</th>
-                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Итого / теңге</th>
-                        <th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">Срок / рабочие дни</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rowsHtml}
-                </tbody>
-                <tfoot>
-                    <tr style="background-color: #f9f9f9; font-weight: bold;">
-                        <td colspan="5" align="right" style="border: 1px solid #000000; padding: 6px; text-align: right; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
-                            <strong>ИТОГО ПО ЗАКАЗУ (${vatLabel}):</strong>
-                        </td>
-                        <td align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
-                            <strong>${this.grandTotal}</strong>
-                        </td>
-                        <td align="center" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; text-decoration: none; font-family: 'Times New Roman', Times, serif;">
-                            <span>${this.maxDeliveryTime}</span>
-                        </td>
-                    </tr>
-                </tfoot>
-            </table>`;
+            return '<table width="100%" border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px; color: #000000;">' +
+                '<thead>' +
+                    '<tr>' +
+                        '<th colspan="7" align="center" style="border: 1px solid #000000; padding: 8px; text-align: center; background-color: #f2f2f2; font-size: 15px;"><strong>' + title + '</strong></th>' +
+                    '</tr>' +
+                    '<tr style="background-color: #f9f9f9;">' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">№</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Наименование</th>' +
+                        '<th align="left" style="border: 1px solid #000000; padding: 6px; text-align: left;">Данные</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Кол-во / шт</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Стоимость за единицу / теңге</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Итого / теңге</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Срок / рабочие дни</th>' +
+                    '</tr>' +
+                '</thead>' +
+                '<tbody>' + rowsHtml + '</tbody>' +
+                '<tfoot>' +
+                    '<tr style="background-color: #f9f9f9; font-weight: bold;">' +
+                        '<td colspan="5" align="right" style="border: 1px solid #000000; padding: 6px; text-align: right;"><strong>ИТОГО ПО ЗАКАЗУ (' + vatLabel + '):</strong></td>' +
+                        '<td align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;"><strong>' + this.grandTotal + '</strong></td>' +
+                        '<td align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;"><span>' + this.maxDeliveryTime + '</span></td>' +
+                    '</tr>' +
+                '</tfoot>' +
+            '</table>';
         },
-
-        // --- ГЕНЕРАЦИЯ ОБЫЧНОГО ТЕКСТА ---
         generatePlainText: function() {
             let comp = this.companyName ? this.companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
-            let text = `КП ${this.currentDateFormatted} ${comp}\n\n`;
-            this.savedItems.forEach((it, idx) => {
-                text += `${idx + 1}. ${it.title}\n`;
-                text += `${it.desc.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '')}\n`;
-                text += `Кол-во: ${it.circulation} шт. | Цена: ${it.one_total} тг | Итого: ${it.total} тг | Срок: ${it.delivery || '-'}\n\n`;
+            let text = 'КП ' + this.currentDateFormatted + ' ' + comp + '\n\n';
+            this.savedItems.forEach(function(it, idx) {
+                text += (idx + 1) + '. ' + it.title + '\n';
+                text += it.desc.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '') + '\n';
+                text += 'Кол-во: ' + it.circulation + ' шт. | Цена: ' + it.one_total + ' тг | Итого: ' + it.total + ' тг | Срок: ' + (it.delivery ? it.delivery : '-') + '\n\n';
             });
-            text += `ИТОГО ПО ЗАКАЗУ: ${this.grandTotal} тг\nСрок: ${this.maxDeliveryTime}`;
+            text += 'ИТОГО ПО ЗАКАЗУ: ' + this.grandTotal + ' тг\nСрок: ' + this.maxDeliveryTime;
             return text;
         },
-
-        // --- ЦЕНТРАЛИЗОВАННОЕ СОХРАНЕНИЕ В ИСТОРИЮ ---
         saveCurrentToHistory: function() {
-            let summaryTitles = this.savedItems.map(i => `${i.title} (${i.circulation} шт)`).join(', ');
+            let summaryTitles = this.savedItems.map(function(i) { return i.title + ' (' + i.circulation + ' шт)'; }).join(', ');
             let targetId = this.currentLoadedHistoryId || Date.now();
             let isUpdate = !!this.currentLoadedHistoryId;
 
@@ -664,7 +658,7 @@ var app = new Vue({
             };
 
             if (isUpdate) {
-                let idx = this.userHistory.findIndex(h => h.id === targetId);
+                let idx = this.userHistory.findIndex(function(h) { return h.id === targetId; });
                 if (idx !== -1) this.$set(this.userHistory, idx, record);
             } else {
                 this.userHistory.unshift(record);
@@ -672,19 +666,25 @@ var app = new Vue({
             }
             this.saveUserHistory();
 
-            if (this.googleScriptUrl && this.googleScriptUrl.startsWith('http')) {
+            if (this.googleScriptUrl && this.googleScriptUrl.indexOf('http') === 0) {
                 this.isSyncing = true;
                 fetch(this.googleScriptUrl, {
                     method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'save', record: record })
                 })
-                .then(r => r.json())
-                .catch(err => console.error('Ошибка сохранения в Google:', err))
-                .finally(() => { this.isSyncing = false; });
+                .then(() => {
+                    this.showNotification('КП сохранено в истории и отправлено в Google!');
+                })
+                .catch(function(err) {
+                    console.error('Ошибка сохранения в Google:', err);
+                })
+                .finally(() => {
+                    this.isSyncing = false;
+                });
             }
         },
-
-        // --- ЭКСПОРТ В PDF (вызов внешнего модуля pdf.js) ---
         exportToPDF: function() {
             if (this.savedItems.length === 0) {
                 this.showNotification('Таблица пуста!');
@@ -698,7 +698,6 @@ var app = new Vue({
                 return;
             }
 
-            // Передаем данные + текущего менеджера в генератор
             PdfGenerator.download(
                 this.savedItems, 
                 this.companyName, 
@@ -711,8 +710,6 @@ var app = new Vue({
 
             this.saveCurrentToHistory();
         },
-
-        // --- КОПИРОВАНИЕ В БУФЕР ОБМЕНА ---
         fallbackCopy: function(html, plain) {
             let handler = function(e) {
                 e.clipboardData.setData('text/html', html);
@@ -742,7 +739,6 @@ var app = new Vue({
             this.showNotification('КП скопировано в буфер обмена!');
             this.saveCurrentToHistory();
         },
-
         loadFromHistory: function(record) {
             if (this.savedItems.length > 0) {
                 if (!confirm('Текущая таблица будет заменена. Продолжить?')) return;
@@ -760,18 +756,20 @@ var app = new Vue({
             this.editingIndex = null;
             this.currentLoadedHistoryId = record.id;
             this.includeVat = (record.includeVat !== undefined) ? record.includeVat : true;
-            this.showNotification(`КП для «${record.company || 'Без названия'}» загружено!`);
+            this.showNotification('КП для «' + (record.company || 'Без названия') + '» загружено!');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         },
         deleteHistoryRecord: function(id) {
             if (confirm('Удалить этот расчет из истории?')) {
                 if (this.currentLoadedHistoryId === id) this.currentLoadedHistoryId = null;
-                this.userHistory = this.userHistory.filter(h => h.id !== id);
+                this.userHistory = this.userHistory.filter(function(h) { return h.id !== id; });
                 this.saveUserHistory();
                 if (this.googleScriptUrl) {
                     this.isSyncing = true;
                     fetch(this.googleScriptUrl, {
                         method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'delete', id: id })
                     }).finally(() => { this.isSyncing = false; });
                 }
@@ -785,6 +783,70 @@ var app = new Vue({
                 this.saveUserHistory();
                 this.showNotification('История очищена');
             }
+        },
+        exportHistoryJson: function() {
+            if (!this.userHistory || this.userHistory.length === 0) {
+                this.showNotification('История пуста, нечего экспортировать!');
+                return;
+            }
+            let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.userHistory, null, 2));
+            let dl = document.createElement('a');
+            let name = 'kp_history_' + (this.currentManager.id || 'manager') + '_' + this.currentDateFormatted.replace(/\./g, '-') + '.json';
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", name);
+            document.body.appendChild(dl);
+            dl.click();
+            dl.remove();
+            this.showNotification('Файл истории скачан: ' + name);
+        },
+        importHistoryJson: function(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+
+            let reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    let imported = JSON.parse(e.target.result);
+                    let list = Array.isArray(imported) ? imported : (imported.data || []);
+                    
+                    if (!Array.isArray(list) || list.length === 0) {
+                        alert('Файл пуст или содержит некорректные данные.');
+                        return;
+                    }
+
+                    let currentIds = new Set(this.userHistory.map(h => h.id));
+                    let addedCount = 0;
+
+                    list.forEach(item => {
+                        if (item && item.id && !currentIds.has(item.id)) {
+                            item.managerId = this.currentManager.id;
+                            item.managerName = this.currentManager.name;
+                            this.userHistory.unshift(item);
+                            currentIds.add(item.id);
+                            addedCount++;
+                        }
+                    });
+
+                    this.saveUserHistory();
+                    this.showNotification('Успешно импортировано КП: ' + addedCount + ' шт.!');
+
+                    if (this.googleScriptUrl && addedCount > 0) {
+                        this.userHistory.forEach(rec => {
+                            fetch(this.googleScriptUrl, {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify({ action: 'save', record: rec })
+                            }).catch(() => {});
+                        });
+                    }
+                } catch (err) {
+                    alert('Ошибка чтения JSON: ' + err.message);
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
         },
         addBlock: function() {
             this.selected.presentation_blocks.push({
@@ -853,7 +915,7 @@ var app = new Vue({
                     this.selected.paper = 'p8';
                 }
             }
-            if (this.selected.good === 'presentation') {
+            if (this.selected.good === 'presentation' || this.selected.good === 'pad') {
                 this.selected.size = 'a4';
                 this.selected.orientation = 'landscape';
                 this.selected.cover_paper = 'p8';
@@ -866,8 +928,8 @@ var app = new Vue({
                 this.selected.back_cover_lamination = 'none';
                 this.selected.back_cover_toner = 'none';
                 this.selected.back_cover_toner_usd = 0;
-                this.selected.presentation_type = 'presentation';
                 this.selected.binding_edge = 'short';
+                this.selected.presentation_spring_type = 'metal';
                 this.selected.presentation_blocks = [
                     { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
                 ];
