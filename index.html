@@ -723,7 +723,7 @@
                                 <ul class="mb-1 pl-3" style="font-size: 0.95em;">
                                     <li>Бумага: {{ result_price.paperPrice }} тг</li>
                                     <li>Печать (основная): {{ result_price.colorPrice }} тг</li>
-                                    <li v-if="result_price.laminationPrice > 0">Ламинация/Припресс: {{ result_price.laminationPrice }} тг</li>
+                                    <li v-if="result_price.laminationPrice > 0">Припресс/Ламинация: {{ result_price.laminationPrice }} тг</li>
                                     
                                     <!-- СПЕЦТОНЕР 1 -->
                                     <li v-if="selected.toner1 && selected.toner1 !== 'none'">
