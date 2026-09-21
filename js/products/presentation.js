@@ -1,205 +1,173 @@
+// ==========================================================================
+// МОДУЛЬ ПРОДУКТА: ПРЕЗЕНТАЦИИ (js/products/presentation.js)
+// ==========================================================================
+
 window.ProductModules = window.ProductModules || {};
 
 window.ProductModules['presentation'] = {
-    calcLayout: function(selected, config, papers, sizes, laminations) {
-        let isLandscape = selected.orientation === 'landscape';
+    calcLayout: function(sel, config, papers, sizes, laminations) {
+        let isLandscape = sel.orientation === 'landscape';
+
+        // Считываем либо свой размер, либо габариты из справочника
         let leafSizes = (sizes && sizes.leaflet) ? sizes.leaflet : {};
-        let sizeObj = leafSizes[selected.size] || leafSizes['a4'] || { w: 210, h: 297 };
-        let pageW = sizeObj.w;
-        let pageH = sizeObj.h;
+        let pageW = (sel.size === 'custom') 
+            ? (Number(sel.custom_width) || 0) 
+            : (leafSizes[sel.size] ? leafSizes[sel.size].w : 210);
+        let pageH = (sel.size === 'custom') 
+            ? (Number(sel.custom_height) || 0) 
+            : (leafSizes[sel.size] ? leafSizes[sel.size].h : 297);
+
         let w = isLandscape ? pageH : pageW;
         let h = isLandscape ? pageW : pageH;
 
+        let outer = config.bleeds / 2;
+        let gapY = config.bleeds / 2;
         let gapX = 5;
-        let gapY = (config.bleeds || 6) / 2;
-        let outer = (config.bleeds || 6) / 2;
 
-        let calcN = function(paperUsable, itemNet, currentGap) {
-            if (paperUsable < itemNet + 2 * outer) return 0;
-            return Math.floor((paperUsable + currentGap - 2 * outer) / (itemNet + currentGap));
-        };
-        let calcYield = function(netW, netH, paperW, paperH) {
-            let uW = paperW - (config.margins || 4);
-            let uH = paperH - (config.margins || 4);
-            let opt1 = calcN(uW, netW, gapX) * calcN(uH, netH, gapY);
-            let opt2 = calcN(uW, netH, gapX) * calcN(uH, netW, gapY);
-            return Math.max(opt1, opt2);
-        };
+        let coverYield = 1;
+        let backCoverYield = 1;
 
-        let getPaper = function(key) {
-            if (key === 'custom') return { w: selected.custom_paper_width || 450, h: selected.custom_paper_height || 320 };
-            return papers[key] ? { w: papers[key].w || 450, h: papers[key].h || 320 } : { w: 450, h: 320 };
-        };
-        let isLam = function(key) {
-            return laminations[key] && laminations[key].name.toLowerCase().includes('ламинация');
-        };
+        if (!sel.presentation_only_block) {
+            let cPaper = CalcEngine.getPaperDef(sel.cover_paper, sel, papers);
+            if (CalcEngine.isLaminated(sel.cover_lamination, laminations)) { cPaper.w = 420; cPaper.h = 297; }
+            coverYield = CalcEngine.calcYield(w, h, cPaper.w, cPaper.h, gapX, gapY, outer, config.margins);
 
-        let cP = getPaper(selected.cover_paper);
-        if (isLam(selected.cover_lamination)) { cP.w = 420; cP.h = 297; }
-        let cover_yield = calcYield(w, h, cP.w, cP.h);
+            let bcPaper = CalcEngine.getPaperDef(sel.back_cover_paper, sel, papers);
+            if (CalcEngine.isLaminated(sel.back_cover_lamination, laminations)) { bcPaper.w = 420; bcPaper.h = 297; }
+            backCoverYield = CalcEngine.calcYield(w, h, bcPaper.w, bcPaper.h, gapX, gapY, outer, config.margins);
+        }
 
-        let bcP = getPaper(selected.back_cover_paper);
-        if (isLam(selected.back_cover_lamination)) { bcP.w = 420; bcP.h = 297; }
-        let back_cover_yield = calcYield(w, h, bcP.w, bcP.h);
-
-        let blocks_yield = [];
-        if (selected.presentation_blocks) {
-            for (let b of selected.presentation_blocks) {
-                let bP = getPaper(b.paper);
-                if (isLam(b.lamination)) { bP.w = 420; bP.h = 297; }
-                blocks_yield.push(calcYield(w, h, bP.w, bP.h));
+        let blocksYield = [];
+        if (sel.presentation_blocks) {
+            for (let b of sel.presentation_blocks) {
+                let bPaper = CalcEngine.getPaperDef(b.paper, sel, papers);
+                if (CalcEngine.isLaminated(b.lamination, laminations)) { bPaper.w = 420; bPaper.h = 297; }
+                blocksYield.push(CalcEngine.calcYield(w, h, bPaper.w, bPaper.h, gapX, gapY, outer, config.margins));
             }
         }
 
         return {
-            cover_yield: cover_yield,
-            back_cover_yield: back_cover_yield,
-            blocks_yield: blocks_yield,
+            base: { yield: 1 },
+            cover: { yield: 1 },
+            block: { yield: 1 },
             presentation: {
-                cover_yield: cover_yield,
-                back_cover_yield: back_cover_yield,
-                blocks_yield: blocks_yield
-            }
+                cover_yield: coverYield,
+                back_cover_yield: backCoverYield,
+                blocks_yield: blocksYield
+            },
+            svg: { paperW: 450, paperH: 320, items: [] }
         };
     },
 
-    calcPrice: function(selected, config, papers, sizes, colors, laminations, toners) {
-        let layout = this.calcLayout(selected, config, papers, sizes, laminations);
+    calcPrice: function(sel, config, papers, sizes, colors, laminations) {
+        let profitMult = config.profit_per_one;
+        let lay = this.calcLayout(sel, config, papers, sizes, laminations);
+
         let doesNotFit = false;
+        if (!sel.presentation_only_block) {
+            if (lay.presentation.cover_yield === 0 || lay.presentation.back_cover_yield === 0) doesNotFit = true;
+        }
+        if (lay.presentation.blocks_yield.some(y => y === 0)) doesNotFit = true;
 
-        let getLenFactor = function(pDef) {
-            if (!pDef) return 1;
-            let m = Math.max(pDef.w, pDef.h);
-            return Math.max(1, m / 450);
-        };
-        let getBaseRunCost = function(pDef) {
-            if (!pDef) return config.run_color || 44;
-            let maxL = Math.max(pDef.w, pDef.h), minL = Math.min(pDef.w, pDef.h);
-            if (maxL <= 330 && minL <= 225) return config.run_small || 25;
-            if (maxL <= 490) return config.run_color || 44;
-            return (config.run_small || 25) * Math.ceil(maxL / 220);
-        };
-        let getColorPrice = function(cKey, pDef) {
-            let r = getBaseRunCost(pDef);
-            if (cKey === '4_0') return r;
-            if (cKey === '4_4') return r * 2;
-            if (cKey === '4_1') return r + (config.run_bw || 20);
-            if (cKey === '1_0') return config.run_bw || 20;
-            if (cKey === '1_1') return (config.run_bw || 20) * 2;
-            return 0;
-        };
-        let getLamPrice = function(lKey, pDef) {
-            if (!laminations[lKey] || laminations[lKey].price === 0) return 0;
-            return laminations[lKey].price * getLenFactor(pDef);
-        };
-        let getPaper = function(key) {
-            if (key === 'custom') return { w: selected.custom_paper_width || 450, h: selected.custom_paper_height || 320 };
-            return papers[key] ? { w: papers[key].w || 450, h: papers[key].h || 320 } : { w: 450, h: 320 };
-        };
+        let totalCoverCost = 0;
+        let totalBackCost = 0;
+        let coverSheets = 0;
+        let backSheets = 0;
+        let totalPresSheetsPerItem = 0;
 
-        let yCover = layout.cover_yield || 1;
-        let yBack = layout.back_cover_yield || 1;
-        if (!selected.presentation_only_block && (layout.cover_yield === 0 || layout.back_cover_yield === 0)) doesNotFit = true;
+        // Если обложки включены
+        if (!sel.presentation_only_block) {
+            let yCover = lay.presentation.cover_yield || 1;
+            let yBack = lay.presentation.back_cover_yield || 1;
 
-        let coverSheets = selected.presentation_only_block ? 0 : Math.ceil(selected.circulation / yCover);
-        let backSheets = selected.presentation_only_block ? 0 : Math.ceil(selected.circulation / yBack);
+            coverSheets = Math.ceil(sel.circulation / yCover);
+            backSheets = Math.ceil(sel.circulation / yBack);
+            totalPresSheetsPerItem += 2;
 
-        // Обложка
-        let cPaperDef = getPaper(selected.cover_paper);
-        let cPaperPrice = selected.cover_paper === 'custom' ? Number(selected.custom_paper_price || 0) : (papers[selected.cover_paper] ? papers[selected.cover_paper].price : 0);
-        let cColorPrice = getColorPrice(selected.cover_color, cPaperDef);
-        let cLamPrice = getLamPrice(selected.cover_lamination, cPaperDef);
-        let cRunCost = getBaseRunCost(cPaperDef);
-        let cTonerRunsCost = selected.cover_toner !== 'none' ? cRunCost * 2 : 0;
-        let cTonerUsdLump = selected.cover_toner !== 'none' ? (Number(selected.cover_toner_usd) || 0) * (config.usd_rate || 500) : 0;
-        let cPlotterCost = 0;
-        if (selected.cover_plotter_cut === 'plotter') cPlotterCost = (config.plotter_sra3 || 150) * getLenFactor(cPaperDef);
-        if (selected.cover_plotter_cut === 'plotter_perf') cPlotterCost = (config.plotter_perf_sra3 || 300) * getLenFactor(cPaperDef);
+            // Обложка
+            let cPaperDef = CalcEngine.getPaperDef(sel.cover_paper, sel, papers);
+            let cPaperPrice = sel.cover_paper === 'custom' ? sel.custom_paper_price : papers[sel.cover_paper].price;
+            let cColorPrice = CalcEngine.getColorPrice(sel.cover_color, cPaperDef, false, sel, config);
+            let cLamPrice = CalcEngine.getLamPrice(sel.cover_lamination, cPaperDef, false, laminations);
+            let cRunCost = CalcEngine.getBaseRunCost(cPaperDef, false, sel, config);
+            let cTonerRuns = sel.cover_toner !== 'none' ? cRunCost * 2 : 0;
+            let cTonerLump = sel.cover_toner !== 'none' ? (Number(sel.cover_toner_usd) || 0) * config.usd_rate : 0;
+            let cPlotter = (sel.cover_plotter_cut === 'plotter') ? config.plotter_sra3 * CalcEngine.getLenFactor(cPaperDef) : ((sel.cover_plotter_cut === 'plotter_perf') ? config.plotter_perf_sra3 * CalcEngine.getLenFactor(cPaperDef) : 0);
 
-        let coverCostPerSheet = cPaperPrice + cColorPrice + cLamPrice + cTonerRunsCost + cPlotterCost;
-        let totalCoverCost = selected.presentation_only_block ? 0 : (coverSheets * coverCostPerSheet) + cTonerUsdLump;
+            let coverCostPerSheet = cPaperPrice + cColorPrice + cLamPrice + cTonerRuns + cPlotter;
+            totalCoverCost = (coverSheets * coverCostPerSheet) + cTonerLump;
 
-        // Задняя обложка
-        let bcPaperDef = getPaper(selected.back_cover_paper);
-        let bcPaperPrice = selected.back_cover_paper === 'custom' ? Number(selected.custom_paper_price || 0) : (papers[selected.back_cover_paper] ? papers[selected.back_cover_paper].price : 0);
-        let bcColorPrice = getColorPrice(selected.back_cover_color, bcPaperDef);
-        let bcLamPrice = getLamPrice(selected.back_cover_lamination, bcPaperDef);
-        let bcRunCost = getBaseRunCost(bcPaperDef);
-        let bcTonerRunsCost = selected.back_cover_toner !== 'none' ? bcRunCost * 2 : 0;
-        let bcTonerUsdLump = selected.back_cover_toner !== 'none' ? (Number(selected.back_cover_toner_usd) || 0) * (config.usd_rate || 500) : 0;
-        let bcPlotterCost = 0;
-        if (selected.back_cover_plotter_cut === 'plotter') bcPlotterCost = (config.plotter_sra3 || 150) * getLenFactor(bcPaperDef);
-        if (selected.back_cover_plotter_cut === 'plotter_perf') bcPlotterCost = (config.plotter_perf_sra3 || 300) * getLenFactor(bcPaperDef);
+            // Подложка
+            let bcPaperDef = CalcEngine.getPaperDef(sel.back_cover_paper, sel, papers);
+            let bcPaperPrice = sel.back_cover_paper === 'custom' ? sel.custom_paper_price : papers[sel.back_cover_paper].price;
+            let bcColorPrice = CalcEngine.getColorPrice(sel.back_cover_color, bcPaperDef, false, sel, config);
+            let bcLamPrice = CalcEngine.getLamPrice(sel.back_cover_lamination, bcPaperDef, false, laminations);
+            let bcRunCost = CalcEngine.getBaseRunCost(bcPaperDef, false, sel, config);
+            let bcTonerRuns = sel.back_cover_toner !== 'none' ? bcRunCost * 2 : 0;
+            let bcTonerLump = sel.back_cover_toner !== 'none' ? (Number(sel.back_cover_toner_usd) || 0) * config.usd_rate : 0;
+            let bcPlotter = (sel.back_cover_plotter_cut === 'plotter') ? config.plotter_sra3 * CalcEngine.getLenFactor(bcPaperDef) : ((sel.back_cover_plotter_cut === 'plotter_perf') ? config.plotter_perf_sra3 * CalcEngine.getLenFactor(bcPaperDef) : 0);
 
-        let backCostPerSheet = bcPaperPrice + bcColorPrice + bcLamPrice + bcTonerRunsCost + bcPlotterCost;
-        let totalBackCost = selected.presentation_only_block ? 0 : (backSheets * backCostPerSheet) + bcTonerUsdLump;
+            let backCostPerSheet = bcPaperPrice + bcColorPrice + bcLamPrice + bcTonerRuns + bcPlotter;
+            totalBackCost = (backSheets * backCostPerSheet) + bcTonerLump;
+        }
 
         // Внутренние блоки
         let totalBlocksCost = 0;
-        let totalPresSheetsPerItem = selected.presentation_only_block ? 0 : 2;
         let blockSheetsCount = 0;
 
-        if (selected.presentation_blocks) {
-            for (let i = 0; i < selected.presentation_blocks.length; i++) {
-                let b = selected.presentation_blocks[i];
-                let yBlock = layout.blocks_yield[i] || 1;
-                if (yBlock === 0) doesNotFit = true;
-
-                let itemsNeeded = selected.circulation * Number(b.sheets || 0);
-                let bSra3Sheets = Math.ceil(itemsNeeded / yBlock);
+        if (sel.presentation_blocks) {
+            for (let i = 0; i < sel.presentation_blocks.length; i++) {
+                let b = sel.presentation_blocks[i];
+                let yBlock = lay.presentation.blocks_yield[i] || 1;
+                let bSra3Sheets = Math.ceil((sel.circulation * Number(b.sheets || 0)) / yBlock);
                 blockSheetsCount += bSra3Sheets;
                 totalPresSheetsPerItem += Number(b.sheets || 0);
 
-                let bPaperDef = getPaper(b.paper);
-                let bPaperPrice = b.paper === 'custom' ? Number(selected.custom_paper_price || 0) : (papers[b.paper] ? papers[b.paper].price : 0);
-                let bColorPrice = getColorPrice(b.color, bPaperDef);
-                let bLamPrice = getLamPrice(b.lamination, bPaperDef);
-                let bRunC = getBaseRunCost(bPaperDef);
-                let bTonerRunsC = b.toner !== 'none' ? bRunC * 2 : 0;
-                let bTonerUsdLump = b.toner !== 'none' ? (Number(b.toner_usd) || 0) * (config.usd_rate || 500) : 0;
+                let bPaperDef = CalcEngine.getPaperDef(b.paper, sel, papers);
+                let bPaperPrice = b.paper === 'custom' ? sel.custom_paper_price : papers[b.paper].price;
+                let bColorPrice = CalcEngine.getColorPrice(b.color, bPaperDef, false, sel, config);
+                let bLamPrice = CalcEngine.getLamPrice(b.lamination, bPaperDef, false, laminations);
+                let bRunC = CalcEngine.getBaseRunCost(bPaperDef, false, sel, config);
+                let bTonerRuns = b.toner !== 'none' ? bRunC * 2 : 0;
+                let bTonerLump = b.toner !== 'none' ? (Number(b.toner_usd) || 0) * config.usd_rate : 0;
 
-                let bCostPerSheet = bPaperPrice + bColorPrice + bLamPrice + bTonerRunsC;
-                totalBlocksCost += (bSra3Sheets * bCostPerSheet) + bTonerUsdLump;
+                let bCostPerSheet = bPaperPrice + bColorPrice + bLamPrice + bTonerRuns;
+                totalBlocksCost += (bSra3Sheets * bCostPerSheet) + bTonerLump;
             }
         }
 
-        // Сборка на пружину
-        let bindCostPerItem = (config.presentation_base_bind || 500) + Math.max(0, totalPresSheetsPerItem - 20) * 1;
-        let totalBindCost = bindCostPerItem * selected.circulation;
+        // Выбор базового тарифа пружины (металл / пластик)
+        let isPlastic = sel.presentation_spring_type === 'plastic';
+        let baseBindRate = isPlastic 
+            ? (config.presentation_bind_plastic || 350) 
+            : (config.presentation_bind_metal || 500);
+
+        let bindPerItem = baseBindRate + Math.max(0, totalPresSheetsPerItem - 20) * 1;
+        let totalBindCost = bindPerItem * sel.circulation;
 
         let productionCost = totalCoverCost + totalBackCost + totalBlocksCost + totalBindCost;
-        let totalPapersCount = coverSheets + backSheets + blockSheetsCount;
-
-        let presDetails = {
-            coverSheets: coverSheets,
-            coverCostPerSheet: Math.round(coverCostPerSheet),
-            cTonerUsdLump: Math.round(cTonerUsdLump),
-            coverPlotterCost: Math.round(cPlotterCost),
-            backSheets: backSheets,
-            backCostPerSheet: Math.round(backCostPerSheet),
-            bcTonerUsdLump: Math.round(bcTonerUsdLump),
-            backPlotterCost: Math.round(bcPlotterCost),
-            totalBlocksCost: Math.round(totalBlocksCost),
-            blockSra3Sheets: blockSheetsCount,
-            bindCostPerItem: Math.round(bindCostPerItem),
-            totalBindCost: Math.round(totalBindCost)
-        };
-
-        let profitMultiplier = config.profit_per_one || 2.3;
-        let tax = config.tax || 1.36;
-        let productionCostWithTax = productionCost * tax;
-        let costPerPiece = productionCost / (selected.circulation || 1);
-        let unitPrice = Math.ceil((costPerPiece * tax) * profitMultiplier);
-        let totalPrice = unitPrice * selected.circulation;
+        let costPerPiece = productionCost / sel.circulation;
+        let unitPrice = Math.ceil((costPerPiece * config.tax) * profitMult);
+        let totalPrice = unitPrice * sel.circulation;
 
         return {
             doesNotFit: doesNotFit,
             one_total: doesNotFit ? 0 : Math.round(unitPrice),
             total: doesNotFit ? 'НЕ ПОМЕЩАЕТСЯ' : Math.round(totalPrice),
             productionCost: Math.round(productionCost),
-            productionCostWithTax: Math.round(productionCostWithTax),
-            totalPapersCount: totalPapersCount,
-            pres: presDetails
+            productionCostWithTax: Math.round(productionCost * config.tax),
+            totalPapersCount: coverSheets + backSheets + blockSheetsCount,
+            paperPrice: 0,
+            colorPrice: 0,
+            laminationPrice: 0,
+            totalCostPerSheet: Math.round(productionCost / sel.circulation),
+            plotterCost: 0
         };
+    },
+
+    calcDelivery: function(sel) {
+        let circ = Number(sel.circulation) || 0;
+        let add = Math.floor(circ / 100);
+        return (4 + add) + '-' + (6 + add);
     }
 };
