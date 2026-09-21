@@ -212,6 +212,25 @@
                             <select class="form-control form-control-sm mb-2" v-model="selected.size" v-else>
                                 <option v-for="(item, key) in sizes.leaflet" :key="key" :value="key">{{ item.name }}</option>
                             </select>
+
+                            <!-- Блок ввода своего размера для презентаций и блокнотов -->
+                            <div class="row" v-if="(selected.good === 'presentation' || selected.good === 'pad') && selected.size === 'custom'">
+                                <div class="col-6">
+                                    <small class="text-muted">Ширина</small>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="number" class="form-control" v-model.number="selected.custom_width" min="1">
+                                        <div class="input-group-append"><span class="input-group-text">мм</span></div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Высота</small>
+                                    <div class="input-group input-group-sm mb-2">
+                                        <input type="number" class="form-control" v-model.number="selected.custom_height" min="1">
+                                        <div class="input-group-append"><span class="input-group-text">мм</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <select class="form-control form-control-sm mb-2" v-model="selected.orientation">
                                 <option value="portrait">Книжная (вертикальная)</option>
                                 <option value="landscape">Альбомная (горизонтальная)</option>
@@ -833,7 +852,7 @@
                                 </div>
                             </div>
 
-                            <!-- СЕБЕСТОИМОСТЬ ПРЕЗЕНТАЦИЙ И БЛОКНОТОВ (ВОССТАНОВЛЕНО ИЗ V6.6) -->
+                            <!-- СЕБЕСТОИМОСТЬ ПРЕЗЕНТАЦИЙ И БЛОКНОТОВ -->
                             <div v-if="selected.good === 'presentation' || selected.good === 'pad'">
                                 <div v-if="result_price.pres">
                                     <div v-if="!selected.presentation_only_block">
