@@ -344,7 +344,12 @@ var app = new Vue({
                 if (this.selected.presentation_blocks) {
                     for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets || 0);
                 }
-                let leafName = (this.sizes.leaflet && this.sizes.leaflet[this.selected.size]) ? this.sizes.leaflet[this.selected.size].name : 'A4';
+                
+                // Проверка на свой размер
+                let leafName = this.selected.size === 'custom'
+                    ? (this.selected.custom_width + 'x' + this.selected.custom_height + ' мм')
+                    : ((this.sizes.leaflet && this.sizes.leaflet[this.selected.size]) ? this.sizes.leaflet[this.selected.size].name : 'A4');
+                    
                 let ori = this.selected.orientation === 'portrait' ? 'Книжная' : 'Альбомная';
                 return leafName + ' (' + ori + '), ' + sCount + ' листов';
             } else {
@@ -917,6 +922,8 @@ var app = new Vue({
             }
             if (this.selected.good === 'presentation' || this.selected.good === 'pad') {
                 this.selected.size = 'a4';
+                this.selected.custom_width = 210;
+                this.selected.custom_height = 297;
                 this.selected.orientation = 'landscape';
                 this.selected.cover_paper = 'p8';
                 this.selected.cover_color = '4_0';
