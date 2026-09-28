@@ -12,10 +12,13 @@ const APP_CONFIG = {
     run_bw: 20,
     run_small: 25,
 
-    // Припресс и ламинация
+    // Припресс и ламинация (себестоимость за 1 сторону SRA3)
     press_matt_sra3: 29,
     press_gl_sra3: 27,
-    press_touch_sra3: 37,
+    press_touch_silkfeel_sra3: 50,      // Софт-тач 28 мкр Silkfeel (Корея)
+    press_touch_tigerbond_sra3: 66,     // Софт-тач 36 мкр Tigerbond (Корея, для плашек)
+    press_touch_velvet_sra3: 37,        // Софт-тач 32 мкр Velvet (Индия)
+    press_touch_sra3: 37,               // Сохранено для совместимости со старыми сохраненными расчетами
     lam_matt100: 235,
     lam_gl100: 125,
     lam_matt150: 325,
@@ -33,7 +36,7 @@ const APP_CONFIG = {
     bag_exclusive_delivery: 4000, // доставка
     bag_inhouse_assembly: 100,    // сборка у нас
 	
-	// Сборка презентаций
+    // Сборка презентаций
     presentation_bind_metal: 500,   // Металлическая пружина
     presentation_bind_plastic: 350, // Пластиковая пружина
 

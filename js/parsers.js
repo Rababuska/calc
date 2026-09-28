@@ -21,9 +21,46 @@ const CalcParsers = {
             return txt;
         };
 
+        // Вспомогательная функция для формирования понятного названия ламинации с учетом сторонности
+        const getLamText = function(lamKey, sides, hideIfNone) {
+            if (!lamKey) return '';
+            if (lamKey === 'none') {
+                return hideIfNone ? '' : 'Без припресса / ламинации';
+            }
+
+            let cleanKey = lamKey;
+            let actualSides = sides || '1_0';
+            if (typeof cleanKey === 'string') {
+                if (cleanKey.endsWith('_1_0')) {
+                    cleanKey = cleanKey.replace('_1_0', '');
+                    actualSides = '1_0';
+                } else if (cleanKey.endsWith('_1_1')) {
+                    cleanKey = cleanKey.replace('_1_1', '');
+                    actualSides = '1_1';
+                }
+                if (cleanKey === 'press_touch') cleanKey = 'press_touch_velvet';
+            }
+
+            let item = (laminations && (laminations[cleanKey] || laminations[lamKey])) ? (laminations[cleanKey] || laminations[lamKey]) : null;
+            if (!item) return '';
+
+            // Для пакетной ламинации сторонность не пишем
+            if (item.type === 'pouch' || (typeof cleanKey === 'string' && cleanKey.startsWith('lam_'))) {
+                return item.name;
+            }
+
+            let s = (actualSides === '1_1') ? '1+1' : '1+0';
+            if (item.name.includes('1+0') || item.name.includes('1+1')) {
+                return item.name;
+            }
+            return item.name + ' ' + s;
+        };
+
         if (selected.good === 'calendar') {
             desc += 'Размер: ' + spec_size + '<br>';
-            desc += 'Блок: ' + (colors[selected.color] ? colors[selected.color].name : '') + ', ' + (selected.calendar_block_paper === 'custom' ? 'Своя бумага' : (papers[selected.calendar_block_paper] ? papers[selected.calendar_block_paper].name : '')) + ', ' + (laminations[selected.lamination] ? laminations[selected.lamination].name : '') + '<br>';
+            desc += 'Блок: ' + (colors[selected.color] ? colors[selected.color].name : '') + ', ' + 
+                    (selected.calendar_block_paper === 'custom' ? 'Своя бумага' : (papers[selected.calendar_block_paper] ? papers[selected.calendar_block_paper].name : '')) + ', ' + 
+                    getLamText(selected.lamination, selected.lamination_sides) + '<br>';
             
             let spring = 'белая';
             if (selected.calendar_spring === 'black') spring = 'черная';
@@ -43,8 +80,8 @@ const CalcParsers = {
             if (selected.calendar_stand_type === 'cardboard_single' || selected.calendar_stand_type === 'cardboard_double') {
                 let standColor = selected.calendar_stand_color === '4_0' ? '4+0' : (selected.calendar_stand_color === '1_0' ? '1+0' : 'Без печати');
                 desc += 'Печать ножки: ' + standColor + '<br>';
-                if (selected.calendar_stand_lamination !== 'none' && laminations[selected.calendar_stand_lamination]) {
-                    desc += 'Припресс ножки: ' + laminations[selected.calendar_stand_lamination].name + '<br>';
+                if (selected.calendar_stand_lamination !== 'none') {
+                    desc += 'Припресс ножки: ' + getLamText(selected.calendar_stand_lamination, selected.calendar_stand_lamination_sides) + '<br>';
                 }
             }
             
@@ -57,8 +94,8 @@ const CalcParsers = {
             desc += 'Размер: ' + spec_size + '<br>';
             desc += 'Бумага: ' + spec_paper + '<br>';
             if (colors[selected.color]) desc += 'Цветность: ' + colors[selected.color].name + '<br>';
-            if (selected.lamination !== 'none' && laminations[selected.lamination]) {
-                desc += 'Ламинация: ' + laminations[selected.lamination].name + '<br>';
+            if (selected.lamination !== 'none') {
+                desc += 'Ламинация / припресс: ' + getLamText(selected.lamination, selected.lamination_sides || '1_0') + '<br>';
             }
             if (selected.bag_print_sides === 'single') desc += 'Печать только с 1 стороны (вторая половинка 0+0)<br>';
             if (selected.bag_production === 'plotter') desc += 'Сборка: плоттерная резка и ручная сборка VTO<br>';
@@ -69,7 +106,7 @@ const CalcParsers = {
             let cPaper = selected.cover_paper === 'custom' ? 'Своя бумага' : (papers[selected.cover_paper] ? papers[selected.cover_paper].name : '');
             let bPaper = selected.block_paper === 'custom' ? 'Своя бумага' : (papers[selected.block_paper] ? papers[selected.block_paper].name : '');
             
-            desc += 'Обложка: ' + (colors[selected.cover_color] ? colors[selected.cover_color].name : '') + ', ' + cPaper + ', ' + (laminations[selected.cover_lamination] ? laminations[selected.cover_lamination].name : '') + '<br>';
+            desc += 'Обложка: ' + (colors[selected.cover_color] ? colors[selected.cover_color].name : '') + ', ' + cPaper + ', ' + getLamText(selected.cover_lamination, selected.cover_lamination_sides) + '<br>';
             
             if (selected.cover_toner && selected.cover_toner !== 'none' && toners && toners[selected.cover_toner]) {
                  desc += 'Спецтонер (обложка): ' + toners[selected.cover_toner].name + '<br>';
@@ -79,7 +116,7 @@ const CalcParsers = {
             else if (selected.cover_plotter_cut === 'plotter_perf') desc += 'Резка обложки: плоттер (с перфорацией)<br>';
 
             if (selected.pages_count > 4) {
-                desc += 'Блок (' + (selected.pages_count - 4) + ' стр.): ' + (colors[selected.block_color] ? colors[selected.block_color].name : '') + ', ' + bPaper + ', ' + (laminations[selected.block_lamination] ? laminations[selected.block_lamination].name : '') + '<br>';
+                desc += 'Блок (' + (selected.pages_count - 4) + ' стр.): ' + (colors[selected.block_color] ? colors[selected.block_color].name : '') + ', ' + bPaper + ', ' + getLamText(selected.block_lamination, selected.block_lamination_sides) + '<br>';
                 
                 if (selected.block_toner && selected.block_toner !== 'none' && toners && toners[selected.block_toner]) {
                      desc += 'Спецтонер (блок): ' + toners[selected.block_toner].name + '<br>';
@@ -92,13 +129,13 @@ const CalcParsers = {
             
             if (!selected.presentation_only_block) {
                 let cPaper = selected.cover_paper === 'custom' ? 'Своя бумага' : (papers[selected.cover_paper] ? papers[selected.cover_paper].name : '');
-                desc += 'Обложка: ' + (colors[selected.cover_color] ? colors[selected.cover_color].name : '') + ', ' + cPaper + ', ' + (laminations[selected.cover_lamination] ? laminations[selected.cover_lamination].name : '') + '<br>';
+                desc += 'Обложка: ' + (colors[selected.cover_color] ? colors[selected.cover_color].name : '') + ', ' + cPaper + ', ' + getLamText(selected.cover_lamination, selected.cover_lamination_sides) + '<br>';
                 if (selected.cover_toner && selected.cover_toner !== 'none' && toners && toners[selected.cover_toner]) desc += 'Спецтонер (обл): ' + toners[selected.cover_toner].name + '<br>';
                 if (selected.cover_plotter_cut === 'plotter') desc += 'Резка обл: плоттер<br>';
                 else if (selected.cover_plotter_cut === 'plotter_perf') desc += 'Резка обл: перфорация<br>';
 
                 let bcPaper = selected.back_cover_paper === 'custom' ? 'Своя бумага' : (papers[selected.back_cover_paper] ? papers[selected.back_cover_paper].name : '');
-                desc += 'Подложка: ' + (colors[selected.back_cover_color] ? colors[selected.back_cover_color].name : '') + ', ' + bcPaper + ', ' + (laminations[selected.back_cover_lamination] ? laminations[selected.back_cover_lamination].name : '') + '<br>';
+                desc += 'Подложка: ' + (colors[selected.back_cover_color] ? colors[selected.back_cover_color].name : '') + ', ' + bcPaper + ', ' + getLamText(selected.back_cover_lamination, selected.back_cover_lamination_sides) + '<br>';
                 if (selected.back_cover_toner && selected.back_cover_toner !== 'none' && toners && toners[selected.back_cover_toner]) desc += 'Спецтонер (подл): ' + toners[selected.back_cover_toner].name + '<br>';
                 if (selected.back_cover_plotter_cut === 'plotter') desc += 'Резка подл: плоттер<br>';
                 else if (selected.back_cover_plotter_cut === 'plotter_perf') desc += 'Резка подл: перфорация<br>';
@@ -109,7 +146,7 @@ const CalcParsers = {
             if (selected.presentation_blocks && selected.presentation_blocks.length > 0) {
                 selected.presentation_blocks.forEach(function(b, i) {
                     let bPap = b.paper === 'custom' ? 'Своя бумага' : (papers[b.paper] ? papers[b.paper].name : '');
-                    desc += 'Блок ' + (i+1) + ' (' + b.sheets + ' л.): ' + (colors[b.color] ? colors[b.color].name : '') + ', ' + bPap + ', ' + (laminations[b.lamination] ? laminations[b.lamination].name : '') + '<br>';
+                    desc += 'Блок ' + (i+1) + ' (' + b.sheets + ' л.): ' + (colors[b.color] ? colors[b.color].name : '') + ', ' + bPap + ', ' + getLamText(b.lamination, b.lamination_sides) + '<br>';
                     if (b.toner && b.toner !== 'none' && toners && toners[b.toner]) desc += 'Спецтонер: ' + toners[b.toner].name + '<br>';
                 });
             }
@@ -125,12 +162,12 @@ const CalcParsers = {
             // Стандартные позиции: Визитки, Листовки, Стикеры
             desc += 'Размер: ' + spec_size + '<br>';
             if (colors[selected.color]) desc += 'Цветность: ' + colors[selected.color].name + '<br>';
-            if (selected.lamination !== 'none' && laminations[selected.lamination]) {
-                desc += 'Ламинация: ' + laminations[selected.lamination].name + '<br>';
+            if (selected.lamination !== 'none') {
+                desc += 'Ламинация / припресс: ' + getLamText(selected.lamination, selected.lamination_sides) + '<br>';
             }
             desc += 'Бумага: ' + spec_paper + '<br>';
 
-            // ВЫВОД ТОНЕРОВ И ПРОГОНОВ (Восстановлено)
+            // ВЫВОД ТОНЕРОВ И ПРОГОНОВ
             desc += getTonerText(selected.toner1, selected.add_extra_run, selected.toner2);
 
             if (selected.round_corners) desc += 'Скругление углов<br>';
@@ -144,11 +181,26 @@ const CalcParsers = {
 
     restoreSpecFromItem: function(item, currentSelected, sizes, colors, laminations, papers) {
         let s = Object.assign({}, currentSelected);
-        if (!item.specData) return s;
-        let d = item.specData;
-        for (let k in d) {
-            s[k] = d[k];
+        if (item.specData) {
+            let d = item.specData;
+            for (let k in d) {
+                s[k] = d[k];
+            }
+            return s;
         }
+
+        // Резервный парсер из текста desc, если specData отсутствует
+        let desc = item.desc || '';
+        s.circulation = Number(item.circulation) || 100;
+
+        for (let lKey in laminations) {
+            if (lKey !== 'none' && desc.includes(laminations[lKey].name)) {
+                s.lamination = lKey;
+                break;
+            }
+        }
+        s.lamination_sides = desc.includes('1+1') ? '1_1' : '1_0';
+
         return s;
     }
 };

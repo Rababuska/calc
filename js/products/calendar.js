@@ -28,7 +28,7 @@ window.ProductModules['calendar'] = {
         };
     },
 
-    calcPrice: function(sel, config, papers, sizes, colors, laminations) {
+    calcPrice: function(sel, config, papers, sizes, colors, laminations, toners) {
         let circ = Number(sel.circulation) || 1;
         let profitMult = config.profit_per_one; // 2.3
         let pCount = Number(sel.calendar_sheets) || 7;
@@ -42,7 +42,7 @@ window.ProductModules['calendar'] = {
             ? sel.custom_paper_price 
             : (papers[sel.calendar_block_paper] ? papers[sel.calendar_block_paper].price : 37);
         let bColorPrice = CalcEngine.getColorPrice(sel.color, bPaperDef, false, sel, config);
-        let bLamPrice = CalcEngine.getLamPrice(sel.lamination, bPaperDef, false, laminations);
+        let bLamPrice = CalcEngine.getLamPrice(sel.lamination, sel.lamination_sides || '1_0', bPaperDef, false, laminations);
 
         let runCost = CalcEngine.getBaseRunCost(bPaperDef, false, sel, config);
         let toner1Runs = (sel.toner1 !== 'none') ? runCost * 2 : 0;
@@ -84,7 +84,7 @@ window.ProductModules['calendar'] = {
             let linerPaperDef = papers['p47'] || { w: 488, h: 330, price: 22 };
             let linerPaperPrice = linerPaperDef.price;
             let linerColorPrice = CalcEngine.getColorPrice('4_0', linerPaperDef, false, sel, config);
-            let linerLamPrice = CalcEngine.getLamPrice('press_matt_1_0', linerPaperDef, false, laminations);
+            let linerLamPrice = CalcEngine.getLamPrice('press_matt', '1_0', linerPaperDef, false, laminations);
 
             let linerCostPerSheet = linerPaperPrice + linerColorPrice + linerLamPrice;
             let totalLinerProdCost = standSheetsCount * linerCostPerSheet;
@@ -132,7 +132,7 @@ window.ProductModules['calendar'] = {
             standSheetsCount = circ;
             let stPaper = 50;
             let stColor = CalcEngine.getColorPrice(sel.calendar_stand_color, papers['p42'], false, sel, config);
-            let stLam = CalcEngine.getLamPrice(sel.calendar_stand_lamination, papers['p42'], false, laminations);
+            let stLam = CalcEngine.getLamPrice(sel.calendar_stand_lamination, sel.calendar_stand_lamination_sides || '1_0', papers['p42'], false, laminations);
 
             standProdPerItem = stPaper + stColor + stLam;
             standProdCost = standSheetsCount * standProdPerItem;
@@ -146,7 +146,7 @@ window.ProductModules['calendar'] = {
             standSheetsCount = circ * 2;
             let stPaper = 100;
             let stColor = CalcEngine.getColorPrice(sel.calendar_stand_color, papers['p42'], false, sel, config);
-            let stLam = CalcEngine.getLamPrice(sel.calendar_stand_lamination, papers['p42'], false, laminations);
+            let stLam = CalcEngine.getLamPrice(sel.calendar_stand_lamination, sel.calendar_stand_lamination_sides || '1_0', papers['p42'], false, laminations);
 
             standProdPerItem = stPaper + stColor + stLam + config.calendar_glue_double;
             standProdCost = circ * standProdPerItem;

@@ -50,6 +50,7 @@ var app = new Vue({
             circulation: 100,
             color: '4_4',
             lamination: 'none',
+            lamination_sides: '1_0',
             paper: 'p8',
             envelope_size: 'small',
             envelope_price: 25,
@@ -61,6 +62,7 @@ var app = new Vue({
             calendar_stand_type: 'hard_cover',
             calendar_stand_color: '0_0',
             calendar_stand_lamination: 'none',
+            calendar_stand_lamination_sides: '1_0',
             calendar_block_paper: 'p6',
             calendar_cliche_exists: false,
             calendar_cliche_w: 80,
@@ -72,23 +74,26 @@ var app = new Vue({
             cover_paper: 'p6',
             cover_color: '4_4',
             cover_lamination: 'none',
+            cover_lamination_sides: '1_0',
             cover_toner: 'none',
             cover_toner_usd: 0,
             cover_plotter_cut: 'none',
             block_paper: 'p3',
             block_color: '4_4',
             block_lamination: 'none',
+            block_lamination_sides: '1_0',
             block_toner: 'none',
             block_toners_usd: 0,
             back_cover_paper: 'p6',
             back_cover_color: '0_0',
             back_cover_lamination: 'none',
+            back_cover_lamination_sides: '1_0',
             back_cover_toner: 'none',
             back_cover_toner_usd: 0,
             back_cover_plotter_cut: 'none',
             binding_edge: 'short',
             presentation_blocks: [
-                { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
+                { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', lamination_sides: '1_0', toner: 'none', toner_usd: 0 }
             ],
             cut_type: 'double',
             plotter_cut: 'none',
@@ -214,43 +219,37 @@ var app = new Vue({
             return bestRange || '-';
         },
         available_colors: function() {
-            if (this.selected.good === 'bag') {
-                return { '4_0': { name: '4+0 (Полноцветная)' }, '1_0': { name: '1+0 (Черно-белая)' } };
+            if (this.selected.good === 'bag' || this.selected.good === 'sticker') {
+                return { 
+                    '4_0': { name: '4+0 (Полноцветная)' }, 
+                    '1_0': { name: '1+0 (Черно-белая)' } 
+                };
             }
             return this.colors;
         },
         laminations: function() {
-            let c = this.config;
-            if (!c || Object.keys(c).length === 0) return {};
-            return {
-                'none': { name: 'Без припресса / ламинации', price: 0 },
-                'press_matt_1_0': { name: 'Матовый припресс 1+0', price: c.press_matt_sra3 },
-                'press_matt_1_1': { name: 'Матовый припресс 1+1', price: c.press_matt_sra3 * 2 },
-                'press_gl_1_0': { name: 'Глянцевый припресс 1+0', price: c.press_gl_sra3 },
-                'press_gl_1_1': { name: 'Глянцевый припресс 1+1', price: c.press_gl_sra3 * 2 },
-                'press_touch_1_0': { name: 'Тач припресс 1+0', price: c.press_touch_sra3 },
-                'press_touch_1_1': { name: 'Тач припресс 1+1', price: c.press_touch_sra3 * 2 },
-                'lam_matt100': { name: 'Матовая ламинация 100 мкр', price: c.lam_matt100 },
-                'lam_gl100': { name: 'Глянцевая ламинация 100 мкр', price: c.lam_gl100 },
-                'lam_matt150': { name: 'Матовая ламинация 150 мкр', price: c.lam_matt150 },
-                'lam_gl150': { name: 'Глянцевая ламинация 150 мкр', price: c.lam_gl150 }
-            };
+            let base = (typeof APP_LAMINATIONS !== 'undefined') ? APP_LAMINATIONS : {};
+            let c = this.config || {};
+            let res = {};
+            for (let k in base) {
+                let item = Object.assign({}, base[k]);
+                if (item.priceKey && c[item.priceKey] !== undefined) {
+                    item.price = c[item.priceKey];
+                }
+                res[k] = item;
+            }
+            return res;
         },
         available_laminations: function() {
             let res = {};
-            if (this.selected.good === 'bag') {
-                return {
-                    'none': { name: 'Без припресса', price: 0 },
-                    'press_matt_1_0': { name: 'Матовый припресс 1+0', price: this.config.press_matt_sra3 },
-                    'press_gl_1_0': { name: 'Глянцевый припресс 1+0', price: this.config.press_gl_sra3 },
-                    'press_touch_1_0': { name: 'Тач припресс 1+0', price: this.config.press_touch_sra3 }
-                };
-            }
             for (let key in this.laminations) {
-                if (this.selected.good === 'sticker') {
-                    if (key === 'none' || key.endsWith('_1_0')) res[key] = this.laminations[key];
+                let item = this.laminations[key];
+                if (this.selected.good === 'bag' || this.selected.good === 'sticker') {
+                    if (key === 'none' || item.type === 'roll') {
+                        res[key] = item;
+                    }
                 } else {
-                    res[key] = this.laminations[key];
+                    res[key] = item;
                 }
             }
             return res;
@@ -258,7 +257,10 @@ var app = new Vue({
         brochure_laminations: function() {
             let res = {};
             for (let key in this.laminations) {
-                if (key === 'none' || key.startsWith('press_')) res[key] = this.laminations[key];
+                let item = this.laminations[key];
+                if (key === 'none' || item.type === 'roll') {
+                    res[key] = item;
+                }
             }
             return res;
         },
@@ -344,8 +346,6 @@ var app = new Vue({
                 if (this.selected.presentation_blocks) {
                     for (let b of this.selected.presentation_blocks) sCount += Number(b.sheets || 0);
                 }
-                
-                // Проверка на свой размер
                 let leafName = this.selected.size === 'custom'
                     ? (this.selected.custom_width + 'x' + this.selected.custom_height + ' мм')
                     : ((this.sizes.leaflet && this.sizes.leaflet[this.selected.size]) ? this.sizes.leaflet[this.selected.size].name : 'A4');
@@ -364,6 +364,201 @@ var app = new Vue({
         }
     },
     methods: {
+        formatDate: function(val) {
+            if (!val) return '';
+            if (typeof val === 'string' && val.includes('T')) {
+                let d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    let day = String(d.getDate()).padStart(2, '0');
+                    let month = String(d.getMonth() + 1).padStart(2, '0');
+                    return day + '.' + month + '.' + d.getFullYear();
+                }
+            }
+            return val;
+        },
+
+        processAndSetPhoto: function(source, idx) {
+            let self = this;
+            let handleImg = function(img) {
+                let maxDimension = 600;
+                let width = img.naturalWidth || img.width || 300;
+                let height = img.naturalHeight || img.height || 300;
+
+                if (width > height) {
+                    if (width > maxDimension) {
+                        height = Math.round((height * maxDimension) / width);
+                        width = maxDimension;
+                    }
+                } else {
+                    if (height > maxDimension) {
+                        width = Math.round((width * maxDimension) / height);
+                        height = maxDimension;
+                    }
+                }
+
+                let canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                let ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                let optimizedBase64 = canvas.toDataURL('image/jpeg', 0.82);
+                self.$set(self.savedItems[idx], 'photo', optimizedBase64);
+                self.showNotification('Фото прикреплено к позиции!');
+            };
+
+            if (source instanceof Blob || source instanceof File) {
+                let reader = new FileReader();
+                reader.onload = function(e) {
+                    let img = new Image();
+                    img.onload = function() { handleImg(img); };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(source);
+            } else if (typeof source === 'string') {
+                let img = new Image();
+                img.crossOrigin = 'Anonymous';
+                img.onload = function() {
+                    try {
+                        handleImg(img);
+                    } catch(e) {
+                        self.$set(self.savedItems[idx], 'photo', source);
+                        self.showNotification('Фото прикреплено!');
+                    }
+                };
+                img.onerror = function() {
+                    self.$set(self.savedItems[idx], 'photo', source);
+                };
+                img.src = source;
+            }
+        },
+
+        onPasteClean: function(evt, idx, field) {
+            let clipboard = evt.clipboardData || window.clipboardData;
+            if (!clipboard) return;
+
+            let items = clipboard.items;
+            let imageFile = null;
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type && items[i].type.indexOf('image') !== -1) {
+                        imageFile = items[i].getAsFile();
+                        break;
+                    }
+                }
+            }
+
+            if (imageFile) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                this.processAndSetPhoto(imageFile, idx);
+
+                let text = clipboard.getData('text/plain');
+                if (text && text.trim() && !text.startsWith('data:image') && !text.startsWith('http')) {
+                    document.execCommand('insertText', false, text.trim());
+                }
+                return;
+            }
+
+            let html = clipboard.getData('text/html');
+            if (field === 'title' && html && html.includes('<img')) {
+                let imgMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+                if (imgMatch && imgMatch[1]) {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    this.processAndSetPhoto(imgMatch[1], idx);
+
+                    let text = clipboard.getData('text/plain');
+                    if (text && text.trim() && !text.startsWith('http')) {
+                        document.execCommand('insertText', false, text.trim());
+                    }
+                    return;
+                }
+            }
+
+            evt.preventDefault();
+            let text = clipboard.getData('text/plain');
+
+            if (field === 'title' || field === 'circulation' || field === 'one_total' || field === 'total' || field === 'delivery') {
+                document.execCommand('insertText', false, text.trim());
+                return;
+            }
+
+            if (html) {
+                let parser = new DOMParser();
+                let doc = parser.parseFromString(html, 'text/html');
+                
+                let cleanElement = function(el) {
+                    if (el.nodeType === 1) {
+                        el.removeAttribute('style');
+                        el.removeAttribute('class');
+                        el.removeAttribute('color');
+                        el.removeAttribute('face');
+                        el.removeAttribute('size');
+                        for (let i = 0; i < el.childNodes.length; i++) {
+                            cleanElement(el.childNodes[i]);
+                        }
+                    }
+                };
+                cleanElement(doc.body);
+                document.execCommand('insertHTML', false, doc.body.innerHTML);
+            } else {
+                document.execCommand('insertText', false, text);
+            }
+        },
+
+        removeItemPhoto: function(idx) {
+            this.$set(this.savedItems[idx], 'photo', null);
+            this.showNotification('Фото удалено');
+        },
+
+        normalizeSpecLaminations: function(spec) {
+            if (!spec) return spec;
+            let fields = [
+                { lam: 'lamination', sides: 'lamination_sides' },
+                { lam: 'cover_lamination', sides: 'cover_lamination_sides' },
+                { lam: 'block_lamination', sides: 'block_lamination_sides' },
+                { lam: 'back_cover_lamination', sides: 'back_cover_lamination_sides' },
+                { lam: 'calendar_stand_lamination', sides: 'calendar_stand_lamination_sides' }
+            ];
+            fields.forEach(f => {
+                if (spec[f.lam]) {
+                    let val = spec[f.lam];
+                    if (val.endsWith('_1_0')) {
+                        spec[f.lam] = val.replace('_1_0', '');
+                        if (spec[f.lam] === 'press_touch') spec[f.lam] = 'press_touch_velvet';
+                        spec[f.sides] = '1_0';
+                    } else if (val.endsWith('_1_1')) {
+                        spec[f.lam] = val.replace('_1_1', '');
+                        if (spec[f.lam] === 'press_touch') spec[f.lam] = 'press_touch_velvet';
+                        spec[f.sides] = '1_1';
+                    } else if (!spec[f.sides]) {
+                        spec[f.sides] = '1_0';
+                    }
+                } else {
+                    spec[f.sides] = '1_0';
+                }
+            });
+            if (Array.isArray(spec.presentation_blocks)) {
+                spec.presentation_blocks.forEach(b => {
+                    if (b.lamination) {
+                        let val = b.lamination;
+                        if (val.endsWith('_1_0')) {
+                            b.lamination = val.replace('_1_0', '');
+                            if (b.lamination === 'press_touch') b.lamination = 'press_touch_velvet';
+                            b.lamination_sides = '1_0';
+                        } else if (val.endsWith('_1_1')) {
+                            b.lamination = val.replace('_1_1', '');
+                            if (b.lamination === 'press_touch') b.lamination = 'press_touch_velvet';
+                            b.lamination_sides = '1_1';
+                        } else if (!b.lamination_sides) {
+                            b.lamination_sides = '1_0';
+                        }
+                    }
+                });
+            }
+            return spec;
+        },
         checkPassword: function() {
             let manager = this.managers.find(m => m.id === this.selectedManagerId);
             if (!manager) return;
@@ -391,7 +586,11 @@ var app = new Vue({
         loadUserHistory: function() {
             if (!this.currentManager.id) return;
             let data = localStorage.getItem('poly_history_' + this.currentManager.id);
-            this.userHistory = data ? JSON.parse(data) : [];
+            let parsed = data ? JSON.parse(data) : [];
+            this.userHistory = parsed.map(item => {
+                if (item.date) item.date = this.formatDate(item.date);
+                return item;
+            });
         },
         saveUserHistory: function() {
             if (!this.currentManager.id) return;
@@ -405,6 +604,9 @@ var app = new Vue({
                 .then(function(res) { return res.json(); })
                 .then(res => {
                     if (res.status === 'ok' && res.data) {
+                        res.data.forEach(item => {
+                            if (item.date) item.date = this.formatDate(item.date);
+                        });
                         this.userHistory = res.data;
                         this.saveUserHistory();
                     }
@@ -449,6 +651,7 @@ var app = new Vue({
                 id: this.savedItemCounter++,
                 title: title,
                 desc: desc,
+                photo: null,
                 circulation: this.selected.circulation,
                 one_total: displayOne,
                 total: displayTotal,
@@ -465,13 +668,13 @@ var app = new Vue({
         editItem: function(idx) {
             let item = this.savedItems[idx];
             if (item.specData) {
-                this.selected = JSON.parse(JSON.stringify(item.specData));
+                this.selected = this.normalizeSpecLaminations(JSON.parse(JSON.stringify(item.specData)));
             } else {
                 let restored = CalcParsers.restoreSpecFromItem(
                     item, this.selected, this.sizes, this.colors, this.laminations, this.papers
                 );
-                this.selected = restored;
-                item.specData = JSON.parse(JSON.stringify(restored));
+                this.selected = this.normalizeSpecLaminations(restored);
+                item.specData = JSON.parse(JSON.stringify(this.selected));
             }
 
             if (this.selected.toner1 !== 'none' || this.selected.add_extra_run || this.selected.round_corners || this.selected.cut_type === 'single' || this.selected.plotter_cut !== 'none') {
@@ -542,6 +745,7 @@ var app = new Vue({
                 id: this.savedItemCounter++,
                 title: 'Индивидуальная позиция / Услуга',
                 desc: 'Описание параметров (кликните для изменения)',
+                photo: null,
                 circulation: 1,
                 one_total: displayOne,
                 total: displayTotal,
@@ -598,9 +802,12 @@ var app = new Vue({
             
             let rowsHtml = '';
             this.savedItems.forEach(function(it, idx) {
+                let photoHtml = it.photo 
+                    ? '<br/><img src="' + it.photo + '" width="75" style="max-width: 75px; max-height: 75px; width: auto; height: auto; display: block; margin: 4px auto; border-radius: 3px;" />' 
+                    : '';
                 rowsHtml += '<tr>' +
                     '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + (idx + 1) + '</td>' +
-                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;"><strong>' + it.title + '</strong></td>' +
+                    '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;"><strong>' + it.title + '</strong>' + photoHtml + '</td>' +
                     '<td align="left" valign="top" style="border: 1px solid #000000; padding: 6px; text-align: left; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + it.desc + '</td>' +
                     '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + it.circulation + '</td>' +
                     '<td align="center" valign="middle" style="border: 1px solid #000000; padding: 6px; text-align: center; color: #000000; font-family: \'Times New Roman\', Times, serif; font-size: 13px;">' + it.one_total + '</td>' +
@@ -618,10 +825,10 @@ var app = new Vue({
                         '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">№</th>' +
                         '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Наименование</th>' +
                         '<th align="left" style="border: 1px solid #000000; padding: 6px; text-align: left;">Данные</th>' +
-                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Кол-во / шт</th>' +
-                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Стоимость за единицу / теңге</th>' +
-                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Итого / теңге</th>' +
-                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Срок / рабочие дни</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Кол-во /<br>шт</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Стоимость за единицу /<br>теңге</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Итого /<br>теңге</th>' +
+                        '<th align="center" style="border: 1px solid #000000; padding: 6px; text-align: center;">Срок /<br>рабочие дни</th>' +
                     '</tr>' +
                 '</thead>' +
                 '<tbody>' + rowsHtml + '</tbody>' +
@@ -640,9 +847,9 @@ var app = new Vue({
             this.savedItems.forEach(function(it, idx) {
                 text += (idx + 1) + '. ' + it.title + '\n';
                 text += it.desc.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '') + '\n';
-                text += 'Кол-во: ' + it.circulation + ' шт. | Цена: ' + it.one_total + ' тг | Итого: ' + it.total + ' тг | Срок: ' + (it.delivery ? it.delivery : '-') + '\n\n';
+                text += 'Кол-во: ' + it.circulation + ' шт. | Цена: ' + it.one_total + ' теңге | Итого: ' + it.total + ' теңге | Срок: ' + (it.delivery ? it.delivery + ' рабочих дней' : '-') + '\n\n';
             });
-            text += 'ИТОГО ПО ЗАКАЗУ: ' + this.grandTotal + ' тг\nСрок: ' + this.maxDeliveryTime;
+            text += 'ИТОГО ПО ЗАКАЗУ: ' + this.grandTotal + ' теңге\nСрок: ' + this.maxDeliveryTime + (this.maxDeliveryTime !== '-' && !this.maxDeliveryTime.includes('уточнить') && !this.maxDeliveryTime.includes('раб') ? ' рабочих дней' : '');
             return text;
         },
         saveCurrentToHistory: function() {
@@ -751,10 +958,13 @@ var app = new Vue({
             this.companyName = record.company || '';
             let items = JSON.parse(JSON.stringify(record.items || []));
             items.forEach(it => {
-                if (it.specData && (!it.productionCost || it.productionCost === 0)) {
-                    let p = this.calcPriceForSpec(it.specData);
-                    it.productionCost = p.productionCost;
-                    it.productionCostWithTax = p.productionCostWithTax;
+                if (it.specData) {
+                    it.specData = this.normalizeSpecLaminations(it.specData);
+                    if (!it.productionCost || it.productionCost === 0) {
+                        let p = this.calcPriceForSpec(it.specData);
+                        it.productionCost = p.productionCost;
+                        it.productionCostWithTax = p.productionCostWithTax;
+                    }
                 }
             });
             this.savedItems = items;
@@ -826,6 +1036,8 @@ var app = new Vue({
                         if (item && item.id && !currentIds.has(item.id)) {
                             item.managerId = this.currentManager.id;
                             item.managerName = this.currentManager.name;
+                            if (item.date) item.date = this.formatDate(item.date);
+                            if (item.specData) item.specData = this.normalizeSpecLaminations(item.specData);
                             this.userHistory.unshift(item);
                             currentIds.add(item.id);
                             addedCount++;
@@ -856,7 +1068,7 @@ var app = new Vue({
         addBlock: function() {
             this.selected.presentation_blocks.push({
                 id: this.blockIdCounter++,
-                sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0
+                sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', lamination_sides: '1_0', toner: 'none', toner_usd: 0
             });
         },
         removeBlock: function(idx) {
@@ -880,8 +1092,15 @@ var app = new Vue({
                 this.selected.size = Object.keys(this.sizes[this.selected.good])[0];
             }
             this.selected.lamination = 'none';
+            this.selected.lamination_sides = '1_0';
             this.selected.cover_lamination = 'none';
+            this.selected.cover_lamination_sides = '1_0';
             this.selected.block_lamination = 'none';
+            this.selected.block_lamination_sides = '1_0';
+            this.selected.back_cover_lamination = 'none';
+            this.selected.back_cover_lamination_sides = '1_0';
+            this.selected.calendar_stand_lamination = 'none';
+            this.selected.calendar_stand_lamination_sides = '1_0';
             this.selected.round_corners = false;
             this.selected.cover_plotter_cut = 'none';
             this.selected.back_cover_plotter_cut = 'none';
@@ -897,7 +1116,8 @@ var app = new Vue({
                 this.selected.bag_size = 'bag_350_225_80';
                 this.selected.paper = 'p51';
                 this.selected.color = '4_0';
-                this.selected.lamination = 'press_matt_1_0';
+                this.selected.lamination = 'press_matt';
+                this.selected.lamination_sides = '1_0';
                 this.selected.bag_production = 'plotter';
             }
             if (this.selected.good === 'calendar') {
@@ -907,9 +1127,11 @@ var app = new Vue({
                 this.selected.calendar_stand_type = 'hard_cover';
                 this.selected.calendar_stand_color = '0_0';
                 this.selected.calendar_stand_lamination = 'none';
+                this.selected.calendar_stand_lamination_sides = '1_0';
                 this.selected.calendar_block_paper = 'p6';
                 this.selected.color = '4_4';
                 this.selected.lamination = 'none';
+                this.selected.lamination_sides = '1_0';
             }
             if (this.selected.good === 'sticker') {
                 this.selected.paper = 'p36';
@@ -928,17 +1150,19 @@ var app = new Vue({
                 this.selected.cover_paper = 'p8';
                 this.selected.cover_color = '4_0';
                 this.selected.cover_lamination = 'none';
+                this.selected.cover_lamination_sides = '1_0';
                 this.selected.cover_toner = 'none';
                 this.selected.cover_toner_usd = 0;
                 this.selected.back_cover_paper = 'p8';
                 this.selected.back_cover_color = '0_0';
                 this.selected.back_cover_lamination = 'none';
+                this.selected.back_cover_lamination_sides = '1_0';
                 this.selected.back_cover_toner = 'none';
                 this.selected.back_cover_toner_usd = 0;
                 this.selected.binding_edge = 'short';
                 this.selected.presentation_spring_type = 'metal';
                 this.selected.presentation_blocks = [
-                    { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', toner: 'none', toner_usd: 0 }
+                    { id: 1, sheets: 20, paper: 'p16', color: '4_4', lamination: 'none', lamination_sides: '1_0', toner: 'none', toner_usd: 0 }
                 ];
             }
 

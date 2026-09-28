@@ -3,36 +3,58 @@
 // ==========================================================================
 
 const PdfGenerator = {
-    // Обратите внимание: мы добавили аргумент managerInfo
     download: function(savedItems, companyName, dateStr, includeVat, grandTotal, maxDeliveryTime, managerInfo) {
         if (typeof pdfMake === 'undefined') {
             alert('Библиотека pdfmake не загружена!');
             return;
         }
 
+        managerInfo = managerInfo || {};
         let comp = companyName ? companyName.trim().toUpperCase() : 'БЕЗ НАЗВАНИЯ';
         let vatLabel = includeVat ? 'с учетом НДС' : 'без учета НДС';
 
-        // 1. Формируем шапку таблицы
+        // 1. Формируем шапку таблицы с единицами измерения
         let tableBody = [
             [
                 { text: '№', style: 'tableHeader' },
                 { text: 'Наименование', style: 'tableHeader' },
                 { text: 'Данные', style: 'tableHeader' },
-                { text: 'Кол-во', style: 'tableHeader' },
-                { text: 'Цена/шт', style: 'tableHeader' },
-                { text: 'Итого', style: 'tableHeader' },
-                { text: 'Срок', style: 'tableHeader' }
+                { text: 'Кол-во /\nшт', style: 'tableHeader' },
+                { text: 'Стоимость за единицу /\nтеңге', style: 'tableHeader' },
+                { text: 'Итого /\nтеңге', style: 'tableHeader' },
+                { text: 'Срок /\nрабочие дни', style: 'tableHeader' }
             ]
         ];
 
         // 2. Заполняем строки товарами
         savedItems.forEach((it, idx) => {
-            let cleanDesc = it.desc.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '');
-            
+            let cleanDesc = (it.desc || '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<[^>]*>?/gm, '');
+
+            // Формируем ячейку наименования с поддержкой фото
+            let titleCellContent = [
+                { 
+                    text: it.title || '', 
+                    bold: true, 
+                    alignment: 'center', 
+                    margin: [0, 2, 0, it.photo ? 4 : 2] 
+                }
+            ];
+
+            // Если прикреплено фото (Base64), добавляем его в ячейку наименования
+            if (it.photo && typeof it.photo === 'string' && it.photo.startsWith('data:image')) {
+                titleCellContent.push({
+                    image: it.photo,
+                    fit: [65, 65], // Пропорциональное вписывание в квадрат 65х65 pt
+                    alignment: 'center',
+                    margin: [0, 0, 0, 2]
+                });
+            }
+
             tableBody.push([
                 { text: (idx + 1).toString(), alignment: 'center', margin: [0, 4, 0, 4] },
-                { text: it.title, bold: true, alignment: 'center', margin: [0, 4, 0, 4] },
+                titleCellContent,
                 { text: cleanDesc, alignment: 'left', margin: [0, 4, 0, 4] },
                 { text: it.circulation.toString(), alignment: 'center', margin: [0, 4, 0, 4] },
                 { text: it.one_total.toString(), alignment: 'center', margin: [0, 4, 0, 4] },
@@ -56,26 +78,7 @@ const PdfGenerator = {
             pageMargins: [30, 40, 30, 40], // Отступы: лево, верх, право, низ
             
             content: [
-                // ==========================================
-                // ШАПКА PDF (ЛОГОТИП И ЗАГОЛОВОК)
-                // ==========================================
-                /* 
-                 * ИНСТРУКЦИЯ ПО ВСТАВКЕ ВАШЕГО ЛОГОТИПА:
-                 * 1. Перейдите на сайт https://www.base64-image.de/
-                 * 2. Загрузите туда картинку вашей шапки
-                 * 3. Скопируйте полученный код (он начинается с "data:image/png;base64,iVBORw0K...")
-                 * 4. Раскомментируйте блок ниже и вставьте код в '...'
-                 * 5. Текстовый блок { text: 'VTO Creative...', ... } можно будет удалить.
-                 */
-                
-                // {
-                //     image: 'data:image/png;base64,ВСТАВЬТЕ_СКОПИРОВАННЫЙ_КОД_СЮДА',
-                //     width: 500, // Подгоните ширину под лист А4
-                //     alignment: 'center',
-                //     margin: [0, 0, 0, 20]
-                // },
-
-                // Временная текстовая шапка (пока нет картинки)
+                // Шапка документа
                 { text: 'V.T.O. Creative & Marketing Laboratory', fontSize: 18, bold: true, alignment: 'center', color: '#1a4e8a', margin: [0, 0, 0, 5] },
                 { text: 'Коммерческое предложение', fontSize: 14, bold: true, alignment: 'center', margin: [0, 0, 0, 20] },
 
@@ -86,7 +89,7 @@ const PdfGenerator = {
                 {
                     table: {
                         headerRows: 1,
-                        widths: ['auto', '17%', '*', 'auto', '11%', '13%', '10%'],
+                        widths: ['auto', '17%', '*', 'auto', '13%', '11%', '11%'],
                         body: tableBody
                     },
                     layout: {
@@ -94,11 +97,9 @@ const PdfGenerator = {
                     }
                 },
 
-                // ==========================================
-                // ПОДВАЛ PDF (ДАННЫЕ МЕНЕДЖЕРА)
-                // ==========================================
+                // Подвал с контактами менеджера
                 {
-                    margin: [0, 40, 0, 0], // Отступ сверху от таблицы
+                    margin: [0, 35, 0, 0],
                     text: [
                         '________________________________\n',
                         { text: (managerInfo.name || 'Менеджер') + '\n', bold: true, fontSize: 11, margin: [0, 5, 0, 0] },

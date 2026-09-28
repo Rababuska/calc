@@ -22,7 +22,7 @@ window.ProductModules['business-card'] = {
         };
     },
 
-    calcPrice: function(sel, config, papers, sizes, colors, laminations) {
+    calcPrice: function(sel, config, papers, sizes, colors, laminations, toners) {
         let profitMult = config.profit_business_card; // Наценка 3.0 на визитки
         let lay = this.calcLayout(sel, config, papers, sizes, laminations);
         let y = lay.base.yield || 1;
@@ -32,7 +32,9 @@ window.ProductModules['business-card'] = {
         let paperDef = CalcEngine.getPaperDef(sel.paper, sel, papers);
         let paperPrice = sel.paper === 'custom' ? sel.custom_paper_price : papers[sel.paper].price;
         let colorPrice = CalcEngine.getColorPrice(sel.color, paperDef, false, sel, config);
-        let laminationPrice = CalcEngine.getLamPrice(sel.lamination, paperDef, false, laminations);
+
+        // Расчет ламинации с учетом выбранной сторонности (1+0 или 1+1)
+        let laminationPrice = CalcEngine.getLamPrice(sel.lamination, sel.lamination_sides || '1_0', paperDef, false, laminations);
 
         let runCost = CalcEngine.getBaseRunCost(paperDef, false, sel, config);
         let toner1Cost = (sel.toner1 !== 'none') ? runCost * 2 : 0;
@@ -66,9 +68,16 @@ window.ProductModules['business-card'] = {
     calcDelivery: function(sel) { return '1-3'; },
 
     generateDesc: function(sel, specSize, specPaper, colors, laminations) {
+        let lamText = 'Без припресса';
+        if (sel.lamination && sel.lamination !== 'none' && laminations[sel.lamination]) {
+            let item = laminations[sel.lamination];
+            let sides = (sel.lamination_sides === '1_1') ? '1+1' : '1+0';
+            lamText = item.type === 'roll' ? (item.name + ' ' + sides) : item.name;
+        }
+
         let desc = 'Размер: ' + specSize + '<br/>' +
                    'Цветность: ' + (colors[sel.color] ? colors[sel.color].name : sel.color) + '<br/>' +
-                   'Ламинация: ' + (laminations[sel.lamination] ? laminations[sel.lamination].name : 'Без припресса') + '<br/>' +
+                   'Ламинация: ' + lamText + '<br/>' +
                    'Бумага: ' + specPaper + '<br/>';
         if (sel.round_corners) desc += 'Скругление углов<br/>';
         return desc;

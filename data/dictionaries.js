@@ -19,6 +19,76 @@ const APP_COLORS = {
     '0_0': { name: '0+0 (Без печати)' }
 };
 
+// Варианты нанесения ламинации
+const APP_LAMINATION_SIDES = {
+    '1_0': { name: '1+0' },
+    '1_1': { name: '1+1' }
+};
+
+// Справочник материалов припресса и ламинации (цена берется за 1 сторону SRA3)
+const APP_LAMINATIONS = {
+    'none': { 
+        name: 'Без припресса / ламинации', 
+        type: 'none', 
+        price: 0,
+        priceKey: null 
+    },
+    'press_matt': { 
+        name: 'Матовый припресс', 
+        type: 'roll', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.press_matt_sra3 : 29),
+        priceKey: 'press_matt_sra3' 
+    },
+    'press_gl': { 
+        name: 'Глянцевый припресс', 
+        type: 'roll', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.press_gl_sra3 : 27),
+        priceKey: 'press_gl_sra3' 
+    },
+    'press_touch_silkfeel': { 
+        name: 'Софт-тач 28 мкр Silkfeel (Корея)', 
+        type: 'roll', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.press_touch_silkfeel_sra3 : 50),
+        priceKey: 'press_touch_silkfeel_sra3' 
+    },
+    'press_touch_velvet': { 
+        name: 'Софт-тач 32 мкр Velvet (Индия)', 
+        type: 'roll', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.press_touch_velvet_sra3 : 37),
+        priceKey: 'press_touch_velvet_sra3' 
+    },
+    'press_touch_tigerbond': { 
+        name: 'Софт-тач 36 мкр Tigerbond (Корея, для плашек)', 
+        type: 'roll', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.press_touch_tigerbond_sra3 : 66),
+        priceKey: 'press_touch_tigerbond_sra3' 
+    },
+    'lam_matt100': { 
+        name: 'Пакетная матовая 100 мкр', 
+        type: 'pouch', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.lam_matt100 : 235),
+        priceKey: 'lam_matt100' 
+    },
+    'lam_gl100': { 
+        name: 'Пакетная глянцевая 100 мкр', 
+        type: 'pouch', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.lam_gl100 : 125),
+        priceKey: 'lam_gl100' 
+    },
+    'lam_matt150': { 
+        name: 'Пакетная матовая 150 мкр', 
+        type: 'pouch', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.lam_matt150 : 325),
+        priceKey: 'lam_matt150' 
+    },
+    'lam_gl150': { 
+        name: 'Пакетная глянцевая 150 мкр', 
+        type: 'pouch', 
+        price: (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.lam_gl150 : 190),
+        priceKey: 'lam_gl150' 
+    }
+};
+
 const APP_TONERS = {
     'none': { name: 'Без спецтонера' },
     'pink': { name: 'PX500 Pink Toner' },
@@ -50,7 +120,6 @@ const APP_SIZES = {
     },
     bag: {
         'bag_350_225_80': { name: '350 (В) х 225 (Ш) х 80 (Г) мм', w: 225, h: 350, d: 80 },
-        'bag_350_230_80': { name: '350 (В) х 230 (Ш) х 80 (Г) мм', w: 230, h: 350, d: 80 },
         'bag_250_200_80': { name: '250 (В) х 200 (Ш) х 80 (Г) мм', w: 200, h: 250, d: 80 }
     },
     calendar: {

@@ -1,7 +1,7 @@
 window.ProductModules = window.ProductModules || {};
 
 window.ProductModules['bag'] = {
-    calcLayout: function(sel, config, papers) {
+    calcLayout: function(sel, config, papers, sizes, laminations) {
         let paperDef = CalcEngine.getPaperDef(sel.paper, sel, papers);
         let maxL = Math.max(paperDef.w, paperDef.h);
         let minL = Math.min(paperDef.w, paperDef.h);
@@ -16,7 +16,7 @@ window.ProductModules['bag'] = {
         };
     },
 
-    calcPrice: function(sel, config, papers, sizes, colors, laminations) {
+    calcPrice: function(sel, config, papers, sizes, colors, laminations, toners) {
         let profitMult = config.profit_per_one;
         let paperDef = CalcEngine.getPaperDef(sel.paper, sel, papers);
         let maxL = Math.max(paperDef.w, paperDef.h);
@@ -34,7 +34,8 @@ window.ProductModules['bag'] = {
             ? (sel.circulation + Math.ceil(makeready / 2)) 
             : totalSheetsCount;
 
-        let laminationPrice = CalcEngine.getLamPrice(sel.lamination, paperDef, false, laminations);
+        // Расчет ламинации с учетом сторонности (для пакетов по умолчанию 1+0) и масштабирования под 488 мм
+        let laminationPrice = CalcEngine.getLamPrice(sel.lamination, sel.lamination_sides || '1_0', paperDef, false, laminations);
 
         let bagPlotterPerSheet = 0;
         if (sel.bag_production === 'plotter') {

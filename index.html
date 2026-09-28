@@ -46,6 +46,30 @@
         .editable-cell { outline: none; transition: background-color 0.2s, box-shadow 0.2s; }
         .editable-cell:hover { background-color: #fff9e6 !important; cursor: text; }
         .editable-cell:focus { background-color: #fff3cd !important; box-shadow: inset 0 0 0 2px #ffc107; }
+        
+        /* Принудительное единое оформление вставленного текста (шрифт таблицы) с сохранением b и i */
+        .editable-cell * {
+            font-family: inherit !important;
+            font-size: inherit !important;
+            color: inherit !important;
+            background-color: transparent !important;
+        }
+
+        /* Защита от распирания ячеек картинками */
+        .editable-cell img {
+            max-width: 90px !important;
+            max-height: 90px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block !important;
+            margin: 4px auto !important;
+            border-radius: 4px !important;
+            border: 1px solid #ced4da !important;
+            background: #fff !important;
+            padding: 2px !important;
+        }
+
         .clickable-row-num { cursor: pointer; color: #007bff; text-decoration: underline; font-weight: bold; }
         .clickable-row-num:hover { color: #0056b3; background-color: #e8f4ff; }
     </style>
@@ -272,19 +296,23 @@
 
                 <tr>
                     <td colspan="3" class="p-0 border-0">
-                        <!-- ЛИСТОВКИ / ВИЗИТКИ / ПАКЕТЫ -->
+                        <!-- ЛИСТОВКИ / ВИЗИТКИ / ПАКЕТЫ / СТИКЕРЫ -->
                         <div v-if="selected.good !== 'brochure' && selected.good !== 'presentation' && selected.good !== 'pad' && selected.good !== 'calendar'" class="row m-0 p-2">
                             <div class="col-4 pl-0">
                                 <label>Цветность</label>
-                                <select class="form-control form-control-sm" v-model="selected.color" :disabled="selected.good === 'envelope' || selected.good === 'sticker'">
+                                <select class="form-control form-control-sm" v-model="selected.color" :disabled="selected.good === 'envelope'">
                                     <option v-for="(item, key) in available_colors" :key="key" :value="key">{{ item.name }}</option>
                                 </select>
                             </div>
                             <div class="col-4">
                                 <label>Припресс / Ламинация</label>
-                                <select class="form-control form-control-sm" v-model="selected.lamination" :disabled="selected.good === 'envelope'">
-                                    <option v-for="(item, key) in available_laminations" :key="key" :value="key">{{ item.name }}</option>
-                                </select>
+                                <lamination-selector 
+                                    v-model="selected.lamination" 
+                                    :sides.sync="selected.lamination_sides" 
+                                    :laminations="available_laminations" 
+                                    :only-single-side="selected.good === 'sticker' || selected.good === 'bag'"
+                                    :disabled="selected.good === 'envelope'">
+                                </lamination-selector>
                             </div>
                             <div class="col-4 pr-0">
                                 <label v-if="selected.good === 'envelope'">Стоимость 1 конверта (тг)</label>
@@ -330,9 +358,11 @@
                                 </div>
                                 <div class="col-4">
                                     <small>Припресс блока</small>
-                                    <select class="form-control form-control-sm" v-model="selected.lamination">
-                                        <option v-for="(item, key) in brochure_laminations" :key="key" :value="key">{{ item.name }}</option>
-                                    </select>
+                                    <lamination-selector 
+                                        v-model="selected.lamination" 
+                                        :sides.sync="selected.lamination_sides" 
+                                        :laminations="brochure_laminations">
+                                    </lamination-selector>
                                 </div>
                             </div>
 
@@ -360,12 +390,12 @@
                                 </div>
                                 <div class="col-md-4" v-if="selected.calendar_stand_type === 'cardboard_single' || selected.calendar_stand_type === 'cardboard_double'">
                                     <small>Припресс ножки</small>
-                                    <select class="form-control form-control-sm" v-model="selected.calendar_stand_lamination">
-                                        <option value="none">Без припресса</option>
-                                        <option value="press_matt_1_0">Матовый 1+0</option>
-                                        <option value="press_gl_1_0">Глянцевый 1+0</option>
-                                        <option value="press_touch_1_0">Soft-Touch 1+0</option>
-                                    </select>
+                                    <lamination-selector 
+                                        v-model="selected.calendar_stand_lamination" 
+                                        :sides.sync="selected.calendar_stand_lamination_sides" 
+                                        :laminations="brochure_laminations"
+                                        :only-single-side="true">
+                                    </lamination-selector>
                                 </div>
 
                                 <div class="col-md-7" v-if="selected.calendar_stand_type === 'boomvinyl' || selected.calendar_stand_type === 'thermo_leather'">
@@ -425,9 +455,11 @@
                                 </div>
                                 <div class="col-4">
                                     <small>Припресс обложки</small>
-                                    <select class="form-control form-control-sm" v-model="selected.cover_lamination">
-                                        <option v-for="(item, key) in brochure_laminations" :key="key" :value="key">{{ item.name }}</option>
-                                    </select>
+                                    <lamination-selector 
+                                        v-model="selected.cover_lamination" 
+                                        :sides.sync="selected.cover_lamination_sides" 
+                                        :laminations="brochure_laminations">
+                                    </lamination-selector>
                                 </div>
                                 <div class="col-4">
                                     <small>Бумага обложки</small>
@@ -453,9 +485,11 @@
                                 </div>
                                 <div class="col-4">
                                     <small>Припресс блока</small>
-                                    <select class="form-control form-control-sm" v-model="selected.block_lamination">
-                                        <option v-for="(item, key) in brochure_laminations" :key="key" :value="key">{{ item.name }}</option>
-                                    </select>
+                                    <lamination-selector 
+                                        v-model="selected.block_lamination" 
+                                        :sides.sync="selected.block_lamination_sides" 
+                                        :laminations="brochure_laminations">
+                                    </lamination-selector>
                                 </div>
                                 <div class="col-4">
                                     <small>Бумага блока</small>
@@ -472,7 +506,7 @@
                                         </div>
                                         <div class="col-6" v-if="selected.block_toner !== 'none'">
                                             <div class="input-group input-group-sm">
-                                                <input type="number" class="form-control" v-model.number="selected.block_toners_usd" min="0" step="any" placeholder="USD на тираж">
+                                                <input type="number" class="form-control" v-model.number="selected.block_toners_usd" min="0" placeholder="USD на тираж">
                                                 <div class="input-group-append"><span class="input-group-text">$</span></div>
                                             </div>
                                         </div>
@@ -487,13 +521,13 @@
                             <div class="row mb-3 bg-white p-2 border rounded m-1">
                                 <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.cover_color"><option v-for="(item, key) in colors" :key="key" :value="key">{{ item.name }}</option></select></div>
                                 <div class="col-5"><small>Бумага</small><paper-selector v-model="selected.cover_paper" :papers="papers"></paper-selector></div>
-                                <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.cover_lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
+                                <div class="col-5"><small>Ламинация</small><lamination-selector v-model="selected.cover_lamination" :sides.sync="selected.cover_lamination_sides" :laminations="laminations"></lamination-selector></div>
                             </div>
                             <div class="section-title text-primary mt-3">Настройки задней обложки / подложки (1 лист)</div>
                             <div class="row mb-3 bg-white p-2 border rounded m-1">
                                 <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.back_cover_color"><option v-for="(item, key) in colors" :key="key" :value="key">{{ item.name }}</option></select></div>
                                 <div class="col-5"><small>Бумага</small><paper-selector v-model="selected.back_cover_paper" :papers="papers"></paper-selector></div>
-                                <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.back_cover_lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
+                                <div class="col-5"><small>Ламинация</small><lamination-selector v-model="selected.back_cover_lamination" :sides.sync="selected.back_cover_lamination_sides" :laminations="laminations"></lamination-selector></div>
                             </div>
                             <div class="section-title text-success mt-3">Внутренний блок листов</div>
                             <div v-for="(block, idx) in selected.presentation_blocks" :key="block.id" class="border p-2 mb-2 bg-white m-1 rounded border-success">
@@ -512,7 +546,7 @@
                                 <div class="row mb-3 bg-white p-2 border rounded m-1">
                                     <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.cover_color"><option v-for="(item, key) in colors" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-5"><small>Бумага</small><paper-selector v-model="selected.cover_paper" :papers="papers"></paper-selector></div>
-                                    <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.cover_lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
+                                    <div class="col-5"><small>Ламинация</small><lamination-selector v-model="selected.cover_lamination" :sides.sync="selected.cover_lamination_sides" :laminations="laminations"></lamination-selector></div>
                                     <div class="col-4 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="selected.cover_toner"><option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-4 mt-2"><small>Плоттерная резка</small><select class="form-control form-control-sm" v-model="selected.cover_plotter_cut"><option value="none">Без резки</option><option value="plotter">Плоттер</option><option value="plotter_perf">С перфорацией</option></select></div>
                                     <div class="col-4 mt-2" v-if="selected.cover_toner !== 'none'">
@@ -525,7 +559,7 @@
                                 <div class="row mb-3 bg-white p-2 border rounded m-1">
                                     <div class="col-2"><small>Цветность</small><select class="form-control form-control-sm" v-model="selected.back_cover_color"><option v-for="(item, key) in colors" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-5"><small>Бумага</small><paper-selector v-model="selected.back_cover_paper" :papers="papers"></paper-selector></div>
-                                    <div class="col-5"><small>Ламинация</small><select class="form-control form-control-sm" v-model="selected.back_cover_lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
+                                    <div class="col-5"><small>Ламинация</small><lamination-selector v-model="selected.back_cover_lamination" :sides.sync="selected.back_cover_lamination_sides" :laminations="laminations"></lamination-selector></div>
                                     <div class="col-4 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="selected.back_cover_toner"><option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-4 mt-2"><small>Плоттерная резка</small><select class="form-control form-control-sm" v-model="selected.back_cover_plotter_cut"><option value="none">Без резки</option><option value="plotter">Плоттер</option><option value="plotter_perf">С перфорацией</option></select></div>
                                     <div class="col-4 mt-2" v-if="selected.back_cover_toner !== 'none'">
@@ -551,7 +585,7 @@
                                     <div class="col-3"><small>Листов (шт)</small><input type="number" class="form-control form-control-sm" v-model.number="block.sheets" min="1"></div>
                                     <div class="col-3"><small>Цветность</small><select class="form-control form-control-sm" v-model="block.color"><option v-for="(item, key) in colors" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-6"><small>Бумага</small><paper-selector v-model="block.paper" :papers="papers"></paper-selector></div>
-                                    <div class="col-6 mt-2"><small>Ламинация</small><select class="form-control form-control-sm" v-model="block.lamination"><option v-for="(item, key) in laminations" :key="key" :value="key">{{ item.name }}</option></select></div>
+                                    <div class="col-6 mt-2"><small>Ламинация</small><lamination-selector v-model="block.lamination" :sides.sync="block.lamination_sides" :laminations="laminations"></lamination-selector></div>
                                     <div class="col-3 mt-2"><small>Спецтонер</small><select class="form-control form-control-sm" v-model="block.toner"><option v-for="(item, key) in toners" :key="key" :value="key">{{ item.name }}</option></select></div>
                                     <div class="col-3 mt-2" v-if="block.toner !== 'none'">
                                         <small>Расход ($) на ВЕСЬ тираж:</small>
@@ -939,10 +973,10 @@
                                     <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">№</th>
                                     <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Наименование</th>
                                     <th align="left" style="border: 1px solid #000; padding: 6px; text-align: left;">Данные</th>
-                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Кол-во</th>
-                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Цена/шт</th>
-                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Итого</th>
-                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Срок</th>
+                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Кол-во /<br>шт</th>
+                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Стоимость за единицу /<br>теңге</th>
+                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Итого /<br>теңге</th>
+                                    <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center;">Срок /<br>рабочие дни</th>
                                     <th align="center" style="border: 1px solid #000; padding: 6px; text-align: center; width: 75px;">Действия</th>
                                 </tr>
                             </thead>
@@ -951,12 +985,47 @@
                                     <td align="center" valign="middle" style="border: 1px solid #000; padding: 6px; text-align: center;" class="clickable-row-num" @click="editItem(idx)">
                                         {{ idx + 1 }}
                                     </td>
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'title')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none; white-space: pre-wrap;" v-text="item.title"></td>
-                                    <td contenteditable="true" @blur="onDescBlur($event, idx)" class="editable-cell" valign="top" style="border: 1px solid #000; padding: 6px; outline: none;" v-html="item.desc"></td>
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'circulation')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.circulation"></td>
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'one_total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.one_total"></td>
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none;" v-text="item.total"></td>
-                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'delivery')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.delivery"></td>
+                                    
+                                    <!-- НАИМЕНОВАНИЕ + ВСТАВКА ФОТО ЧЕРЕЗ Ctrl+V НА ВСЮ ЯЧЕЙКУ -->
+                                    <td align="center" 
+                                        valign="middle" 
+                                        @paste="onPasteClean($event, idx, 'title')"
+                                        style="border: 1px solid #000; padding: 6px; outline: none; white-space: pre-wrap; vertical-align: middle; cursor: text;">
+                                        
+                                        <div contenteditable="true" 
+                                             @blur="onCellBlur($event, idx, 'title')" 
+                                             class="editable-cell font-weight-bold" 
+                                             style="outline: none;" 
+                                             v-text="item.title">
+                                        </div>
+
+                                        <!-- Автоматическая компактная миниатюра при вставке картинки через Ctrl+V -->
+                                        <div v-if="item.photo" class="position-relative d-inline-block mt-2">
+                                            <img :src="item.photo" 
+                                                 style="max-width: 90px; max-height: 90px; width: auto; height: auto; object-fit: contain; border-radius: 4px; border: 1px solid #ced4da; background: #fff; padding: 2px; display: block; margin: 0 auto; box-shadow: 0 1px 3px rgba(0,0,0,0.1);" 
+                                                 alt="Фото позиции">
+                                            <button type="button" 
+                                                    class="btn btn-danger btn-xs position-absolute shadow-sm" 
+                                                    style="top: -6px; right: -6px; padding: 0 5px; font-size: 11px; line-height: 1.2; border-radius: 50%;" 
+                                                    title="Удалить фото" 
+                                                    @click.stop="removeItemPhoto(idx)">✕</button>
+                                        </div>
+                                    </td>
+
+                                    <!-- ДАННЫЕ (с очисткой мусорных шрифтов из Word) -->
+                                    <td contenteditable="true" 
+                                        @blur="onDescBlur($event, idx)" 
+                                        @paste="onPasteClean($event, idx, 'desc')"
+                                        class="editable-cell" 
+                                        valign="top" 
+                                        style="border: 1px solid #000; padding: 6px; outline: none;" 
+                                        v-html="item.desc">
+                                    </td>
+
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'circulation')" @paste="onPasteClean($event, idx, 'circulation')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.circulation"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'one_total')" @paste="onPasteClean($event, idx, 'one_total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.one_total"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'total')" @paste="onPasteClean($event, idx, 'total')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; font-weight: bold; outline: none;" v-text="item.total"></td>
+                                    <td contenteditable="true" @blur="onCellBlur($event, idx, 'delivery')" @paste="onPasteClean($event, idx, 'delivery')" class="editable-cell" align="center" valign="middle" style="border: 1px solid #000; padding: 6px; outline: none;" v-text="item.delivery"></td>
                                     <td align="center" valign="middle" style="border: 1px solid #000; padding: 4px; text-align: center; white-space: nowrap;">
                                         <button class="btn btn-primary btn-sm btn-action-row mr-1" @click="editItem(idx)">✏️</button>
                                         <button class="btn btn-outline-danger btn-sm btn-action-row" @click="removeItem(idx)">✕</button>
@@ -998,7 +1067,7 @@
                             <h6 class="mb-1 font-weight-bold text-primary">
                                 {{ rec.company ? rec.company : 'Без названия компании' }}
                             </h6>
-                            <small class="text-muted font-weight-bold">{{ rec.date }}</small>
+                            <small class="text-muted font-weight-bold">{{ formatDate(rec.date) }}</small>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
@@ -1054,6 +1123,7 @@
 
 <!-- 6. UI-компоненты и приложение -->
 <script src="components/paper-selector.js"></script>
+<script src="components/lamination-selector.js"></script>
 <script src="js/app.js"></script>
 
 </body>

@@ -91,10 +91,53 @@ const CalcEngine = {
         return 0;
     },
 
-    getLamPrice: function(lamKey, paperDef, isEnvelope, laminations) {
-        let base = laminations[lamKey] ? laminations[lamKey].price : 0;
-        if (base === 0 || isEnvelope || !paperDef) return base;
-        return base * this.getLenFactor(paperDef);
+    // 6. Расчет стоимости ламинации с поддержкой сторонности (1+0 / 1+1)
+    getLamPrice: function(lamKey, sides, paperDef, isEnvelope, laminations) {
+        let actualSides = '1_0';
+        let actualPaperDef = paperDef;
+        let actualIsEnvelope = isEnvelope;
+        let actualLaminations = laminations;
+
+        // Определение формата вызова: новый (с sides) или старый (без sides)
+        if (typeof sides === 'string') {
+            actualSides = sides;
+        } else {
+            actualPaperDef = sides;
+            actualIsEnvelope = paperDef;
+            actualLaminations = isEnvelope;
+            if (typeof lamKey === 'string' && lamKey.endsWith('_1_1')) {
+                actualSides = '1_1';
+            }
+        }
+
+        if (!actualLaminations || !lamKey || lamKey === 'none') return 0;
+
+        // Нормализация ключа (если передан устаревший ключ с суффиксом)
+        let cleanKey = lamKey;
+        if (typeof cleanKey === 'string') {
+            if (cleanKey.endsWith('_1_0')) {
+                cleanKey = cleanKey.replace('_1_0', '');
+            } else if (cleanKey.endsWith('_1_1')) {
+                cleanKey = cleanKey.replace('_1_1', '');
+                actualSides = '1_1';
+            }
+            if (cleanKey === 'press_touch') {
+                cleanKey = 'press_touch_velvet';
+            }
+        }
+
+        let item = actualLaminations[cleanKey] || actualLaminations[lamKey];
+        if (!item || !item.price) return 0;
+
+        let multiplier = 1;
+        // Для рулонных припрессов учитывается сторонность; пакетная считается за 1 пакет
+        if (item.type === 'roll') {
+            multiplier = (actualSides === '1_1') ? 2 : 1;
+        }
+
+        let base = item.price * multiplier;
+        if (base === 0 || actualIsEnvelope || !actualPaperDef) return base;
+        return base * this.getLenFactor(actualPaperDef);
     },
 
     getPaperDef: function(key, sel, papers) {
@@ -103,19 +146,30 @@ const CalcEngine = {
     },
 
     isLaminated: function(lamKey, laminations) {
-        return laminations[lamKey] ? laminations[lamKey].name.toLowerCase().includes('ламинация') : false;
+        if (!laminations || !lamKey || lamKey === 'none') return false;
+        let cleanKey = typeof lamKey === 'string' ? lamKey.replace('_1_0', '').replace('_1_1', '') : lamKey;
+        let item = laminations[cleanKey] || laminations[lamKey];
+        if (!item) return false;
+        if (item.type === 'pouch') return true;
+        return item.name ? item.name.toLowerCase().includes('ламинация') : false;
     },
 
     // Диспетчеризация по зарегистрированным модулям
     calcLayoutForSpec: function(sel, config, papers, sizes, laminations) {
         let mod = window.ProductModules[sel.good];
         if (mod && mod.calcLayout) return mod.calcLayout(sel, config, papers, sizes, laminations);
-        return { base: { yield: 1 }, cover: { yield: 1 }, block: { yield: 1 }, presentation: { cover_yield: 1, back_cover_yield: 1, blocks_yield: [] }, svg: { paperW: 450, paperH: 320, items: [] } };
+        return { 
+            base: { yield: 1 }, 
+            cover: { yield: 1 }, 
+            block: { yield: 1 }, 
+            presentation: { cover_yield: 1, back_cover_yield: 1, blocks_yield: [] }, 
+            svg: { paperW: 450, paperH: 320, items: [] } 
+        };
     },
 
-    calcPriceForSpec: function(sel, config, papers, sizes, colors, laminations) {
+    calcPriceForSpec: function(sel, config, papers, sizes, colors, laminations, toners) {
         let mod = window.ProductModules[sel.good];
-        if (mod && mod.calcPrice) return mod.calcPrice(sel, config, papers, sizes, colors, laminations);
+        if (mod && mod.calcPrice) return mod.calcPrice(sel, config, papers, sizes, colors, laminations, toners);
         return { doesNotFit: false, one_total: 0, total: 0, productionCost: 0, productionCostWithTax: 0, totalPapersCount: 0 };
     },
 
