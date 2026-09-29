@@ -99,7 +99,7 @@ const PdfGenerator = {
 
                 // Подвал с контактами менеджера
                 {
-                    margin: [0, 35, 0, 0],
+                    margin: [0, 25, 0, 0],
                     text: [
                         '________________________________\n',
                         { text: (managerInfo.name || 'Менеджер') + '\n', bold: true, fontSize: 11, margin: [0, 5, 0, 0] },
@@ -107,11 +107,17 @@ const PdfGenerator = {
                         (managerInfo.phone || '+7 (___) ___-__-__') + '\n',
                         (managerInfo.internal || '+7 (727) 357-22-77') + '\n',
                         'Email: ' + (managerInfo.email || 'info@vto.kz') + '\n',
+                        'Сайт: ',
                         { text: 'https://vto.kz/\n', color: 'blue', decoration: 'underline', link: 'https://vto.kz/' },
-                        { text: 'https://vizitki.vto.kz/', color: 'blue', decoration: 'underline', link: 'https://vizitki.vto.kz/' }
+                        'Сувенирный каталог: ',
+                        { text: 'https://vto.kz/shop/\n', color: 'blue', decoration: 'underline', link: 'https://vto.kz/shop/' },
+                        'Витрина презентаций: ',
+                        { text: 'https://vto.kz/presentations/\n', color: 'blue', decoration: 'underline', link: 'https://vto.kz/presentations/' },
+                        'Новогодний раздел: ',
+                        { text: 'https://vto.kz/new-year/', color: 'blue', decoration: 'underline', link: 'https://vto.kz/new-year/' }
                     ],
-                    fontSize: 10,
-                    lineHeight: 1.3
+                    fontSize: 9.5,
+                    lineHeight: 1.25
                 }
             ],
             styles: {
