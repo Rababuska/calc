@@ -80,90 +80,9 @@
         <button type="button" id="btn-propaket">ПРОДУКЦИЯ / ПАКЕТЫ</button>
     </div>
 
-    <!-- ПАНЕЛЬ ОСНОВНОГО ЗАКАЗА (НАНЕСЕНИЕ 1) -->
-    <div class="supplier-panel" id="main-supplier-panel">
-        <strong>Нанесение 1:</strong>
-        <div class="search-box-wrap">
-            <input type="text" id="serviceSearch" class="search-input" placeholder="Поиск услуги (ручки, УФ, гравировка, блокноты, тиснение)..." autocomplete="off">
-            <div id="searchResults" class="search-results"></div>
-        </div>
-
-        <button type="button" id="clearService" style="padding: 3px 8px; font-size: 12px; cursor: pointer; display: none;">✖ Сбросить</button>
-        <span id="selectedServiceCostBadge" class="cost-badge" style="display: none;"></span>
-
-        <div id="extraParamsWrap" style="display: none; margin-top: 10px; padding: 8px; background: #fff; border: 1px solid #ddd;">
-            <span id="clicheParams" style="display: none;">
-                <label style="cursor: pointer; margin-right: 10px;"><input type="checkbox" id="clicheExists"> Клише есть</label>
-                <span id="clicheAreaBlock">
-                    Размер клише (мм): <input type="number" id="clicheW" class="mm-input" value="50" min="0"> x <input type="number" id="clicheH" class="mm-input" value="50" min="0">
-                    <span id="clicheAreaOut" style="color: #888; font-size: 12px;">(36.0 см²)</span>
-                </span>
-            </span>
-
-            <span id="dtfParams" style="display: none;">
-                Точки ДТФ (мм): 
-                <span id="dtf-points">
-                    <span class="dtf-point">
-                        <input type="number" class="mm-input dtf-w" value="100" min="0"> x <input type="number" class="mm-input dtf-h" value="100" min="0">
-                    </span>
-                </span>
-                <button type="button" id="addDtfPoint" style="font-size: 11px; cursor: pointer;">+ точка</button>
-            </span>
-        </div>
-        
-        <div class="delivery-checkbox" id="delivery-wrap" style="display: none;">
-            <label style="cursor: pointer;">
-                <input type="checkbox" id="addDeliveryCost" checked> 
-                Включить доставку от поставщика
-            </label>
-        </div>
-
-        <div style="margin-top: 10px;">
-            <button type="button" id="btn-show-second-service" class="btn-primary" style="font-size: 12px;">+ Добавить доп. нанесение</button>
-        </div>
-    </div>
-
-    <!-- ПАНЕЛЬ ДОПОЛНИТЕЛЬНОГО НАНЕСЕНИЯ (НАНЕСЕНИЕ 2) -->
-    <div class="supplier-panel" id="second-supplier-panel" style="display: none; border-left: 4px solid #007bff; margin-top: -5px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong>Нанесение 2 (дополнительное):</strong>
-            <button type="button" id="btn-remove-second-service" style="background: none; border: none; color: #dc3545; font-size: 16px; font-weight: bold; cursor: pointer;" title="Удалить доп. нанесение">✖</button>
-        </div>
-
-        <div class="search-box-wrap">
-            <input type="text" id="serviceSearch2" class="search-input" placeholder="Поиск услуги для второго нанесения..." autocomplete="off">
-            <div id="searchResults2" class="search-results"></div>
-        </div>
-
-        <button type="button" id="clearService2" style="padding: 3px 8px; font-size: 12px; cursor: pointer; display: none;">✖ Сбросить</button>
-        <span id="selectedServiceCostBadge2" class="cost-badge" style="display: none;"></span>
-
-        <div id="extraParamsWrap2" style="display: none; margin-top: 10px; padding: 8px; background: #fff; border: 1px solid #ddd;">
-            <span id="clicheParams2" style="display: none;">
-                <label style="cursor: pointer; margin-right: 10px;"><input type="checkbox" id="clicheExists2"> Клише есть</label>
-                <span id="clicheAreaBlock2">
-                    Размер клише (мм): <input type="number" id="clicheW2" class="mm-input" value="50" min="0"> x <input type="number" id="clicheH2" class="mm-input" value="50" min="0">
-                    <span id="clicheAreaOut2" style="color: #888; font-size: 12px;">(36.0 см²)</span>
-                </span>
-            </span>
-
-            <span id="dtfParams2" style="display: none;">
-                Точки ДТФ (мм): 
-                <span id="dtf-points2">
-                    <span class="dtf-point2">
-                        <input type="number" class="mm-input dtf-w2" value="100" min="0"> x <input type="number" class="mm-input dtf-h2" value="100" min="0">
-                    </span>
-                </span>
-                <button type="button" id="addDtfPoint2" style="font-size: 11px; cursor: pointer;">+ точка</button>
-            </span>
-        </div>
-        
-        <div class="delivery-checkbox" id="delivery-wrap2" style="display: none;">
-            <label style="cursor: pointer;">
-                <input type="checkbox" id="addDeliveryCost2" checked> 
-                Включить доставку для доп. нанесения
-            </label>
-        </div>
+    <div id="services-container"></div>
+    <div style="margin: 10px 0 15px;">
+        <button type="button" id="btn-add-service" class="btn-primary" style="font-size: 13px;">+ Добавить еще нанесение</button>
     </div>
 
     <!-- МУЛЬТИВЕНДОРНАЯ ПАНЕЛЬ ПРОДУКЦИИ И УПАКОВКИ -->
@@ -504,10 +423,94 @@
 
 <script type="text/javascript">
 var currentMode = 'order'; 
-var activeService = null; 
-var activeService2 = null; 
+var serviceUid = 0;
+var servicesList = [];
+window.souvenirServicesReady = false;
 var selectedProduct = null;
 var kpItems = []; 
+
+function createServiceSlot() {
+    let uid = ++serviceUid;
+    let html = `
+        <div class="supplier-panel service-slot" data-uid="${uid}" style="border-left: 4px solid #007bff; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <strong class="slot-title"></strong>
+                <button type="button" class="btn-remove-slot" style="background: none; border: none; color: #dc3545; font-size: 16px; font-weight: bold; cursor: pointer;" title="Удалить нанесение">✖</button>
+            </div>
+            <div class="search-box-wrap">
+                <input type="text" class="search-input slot-search" placeholder="Поиск услуги (ручки, УФ, гравировка, блокноты, тиснение)..." autocomplete="off">
+                <div class="search-results slot-results"></div>
+            </div>
+            <button type="button" class="slot-clear" style="padding: 3px 8px; font-size: 12px; cursor: pointer; display: none;">✖ Сбросить</button>
+            <span class="cost-badge slot-badge" style="display: none;"></span>
+            <div class="slot-extra" style="display: none; margin-top: 10px; padding: 8px; background: #fff; border: 1px solid #ddd;">
+                <span class="slot-cliche" style="display: none;">
+                    <label style="cursor: pointer; margin-right: 10px;"><input type="checkbox" class="slot-cliche-exists"> Клише есть</label>
+                    <span class="slot-cliche-area-block">
+                        Размер клише (мм): <input type="number" class="mm-input slot-cliche-w" value="50" min="0"> x <input type="number" class="mm-input slot-cliche-h" value="50" min="0">
+                        <span class="slot-cliche-area-out" style="color: #888; font-size: 12px;">(36.0 см²)</span>
+                    </span>
+                </span>
+                <span class="slot-dtf" style="display: none;">
+                    Точки ДТФ (мм):
+                    <span class="slot-dtf-points"><span class="dtf-point">
+                        <input type="number" class="mm-input dtf-w" value="100" min="0"> x <input type="number" class="mm-input dtf-h" value="100" min="0">
+                    </span></span>
+                    <button type="button" class="slot-add-dtf-point" style="font-size: 11px; cursor: pointer;">+ точка</button>
+                </span>
+            </div>
+            <div class="delivery-checkbox slot-delivery" style="display: none; margin-top: 8px;">
+                <label style="cursor: pointer;"><input type="checkbox" class="slot-add-delivery" checked> Включить доставку от поставщика</label>
+            </div>
+        </div>`;
+    $('#services-container').append(html);
+    servicesList.push({
+        uid: uid,
+        service: null,
+        withDelivery: true,
+        clicheExists: false,
+        clicheW: 50,
+        clicheH: 50,
+        dtfPoints: [{ w: 100, h: 100 }]
+    });
+    updateServiceSlotTitles();
+}
+
+function updateServiceSlotTitles() {
+    $('.service-slot').each(function(index) {
+        $(this).find('.slot-title').text(`Нанесение #${index + 1}:`);
+        $(this).find('.btn-remove-slot').toggle(servicesList.length > 1);
+    });
+}
+
+function getServiceSlot(uid) {
+    return servicesList.find(function(slot) { return slot.uid === Number(uid); });
+}
+
+function syncServiceSlotInputs(slot) {
+    let $slot = $(`.service-slot[data-uid="${slot.uid}"]`);
+    slot.clicheExists = $slot.find('.slot-cliche-exists').is(':checked');
+    slot.clicheW = Number($slot.find('.slot-cliche-w').val()) || 0;
+    slot.clicheH = Number($slot.find('.slot-cliche-h').val()) || 0;
+    slot.withDelivery = $slot.find('.slot-add-delivery').is(':checked');
+    slot.dtfPoints = $slot.find('.dtf-point').map(function() {
+        return {
+            w: Number($(this).find('.dtf-w').val()) || 0,
+            h: Number($(this).find('.dtf-h').val()) || 0
+        };
+    }).get();
+}
+
+function calcDtfAreaForSlot(q, slot) {
+    let singleCost = 0;
+    slot.dtfPoints.forEach(function(point) {
+        if (point.w > 0 && point.h > 0) {
+            let p = ((point.w / 10) * (point.h / 10)) * 4 + 100;
+            singleCost += Math.max(450, p);
+        }
+    });
+    return Math.round(singleCost * q);
+}
 
 function checkStrictNum($input, defaultVal) {
     if (!$input || !$input.length) return defaultVal !== undefined ? defaultVal : 0;
@@ -606,52 +609,20 @@ function getViplineDirect(pType, iType, q, colors) {
 }
 
 function calcDtfArea(q) {
-    let singleCost = 0;
-    $('.dtf-point').each(function() {
-        let w = Number($(this).find('.dtf-w').val()) || 0;
-        let h = Number($(this).find('.dtf-h').val()) || 0;
-        if (w > 0 && h > 0) {
-            let area = (w / 10) * (h / 10);
-            let p = area * 4 + 100;
-            if (p < 450) p = 450;
-            singleCost += p;
-        }
-    });
-    return Math.round(singleCost * q);
+    return Math.round(450 * q);
 }
 
-function getService2Cost(q) {
-    if (!activeService2) return 0;
-    if (activeService2.isCliche) {
-        let savedExists = $('#clicheExists').prop('checked');
-        let savedW = $('#clicheW').val();
-        let savedH = $('#clicheH').val();
-
-        $('#clicheExists').prop('checked', $('#clicheExists2').is(':checked'));
-        $('#clicheW').val($('#clicheW2').val());
-        $('#clicheH').val($('#clicheH2').val());
-
-        let cost = activeService2.fn(q);
-        $('#clicheExists').prop('checked', savedExists);
-        $('#clicheW').val(savedW);
-        $('#clicheH').val(savedH);
-        return cost;
-    } else if (activeService2.isDtfArea) {
-        let singleCost = 0;
-        $('.dtf-point2').each(function() {
-            let w = Number($(this).find('.dtf-w2').val()) || 0;
-            let h = Number($(this).find('.dtf-h2').val()) || 0;
-            if (w > 0 && h > 0) {
-                let area = (w / 10) * (h / 10);
-                let p = area * 4 + 100;
-                if (p < 450) p = 450;
-                singleCost += p;
-            }
-        });
-        return Math.round(singleCost * q);
-    } else {
-        return activeService2.fn(q);
+function getServiceCost(slot, quantity) {
+    if (!slot.service) return 0;
+    if (slot.service.isCliche) {
+        return calculateExclusive(
+            slot.service.id === 'ex_notebook' ? 'emboss_notebook' : 'emboss_sheet',
+            quantity,
+            { exists: slot.clicheExists, width: slot.clicheW, height: slot.clicheH }
+        );
     }
+    if (slot.service.isDtfArea) return calcDtfAreaForSlot(quantity, slot);
+    return slot.service.fn(quantity);
 }
 
 function colorWords(num) {
@@ -691,10 +662,7 @@ $(document).ready(function() {
         $(this).addClass('active');
         
         $('.row-sklad, .row-propaket, #propaket-panel, #propaket-kp-block').hide();
-        $('#main-supplier-panel, .row-order, .row-shared').show();
-        if ($('#second-supplier-panel').data('open')) {
-            $('#second-supplier-panel').show();
-        }
+        $('#services-container, #btn-add-service, .row-order, .row-shared').show();
         calc();
     });
 
@@ -704,10 +672,7 @@ $(document).ready(function() {
         $(this).addClass('active');
         
         $('#propaket-panel, #propaket-kp-block, .row-order, .row-propaket').hide();
-        $('#main-supplier-panel, .row-sklad, .row-shared').show();
-        if ($('#second-supplier-panel').data('open')) {
-            $('#second-supplier-panel').show();
-        }
+        $('#services-container, #btn-add-service, .row-sklad, .row-shared').show();
         calc();
     });
 
@@ -716,7 +681,7 @@ $(document).ready(function() {
         $('.menu button').removeClass('active');
         $(this).addClass('active');
         
-        $('#main-supplier-panel, #second-supplier-panel, .row-order, .row-sklad').hide();
+        $('#services-container, #btn-add-service, .row-order, .row-sklad').hide();
         $('#propaket-panel, .row-propaket, .row-shared').show();
         if (kpItems.length > 0) {
             $('#propaket-kp-block').show();
@@ -1138,210 +1103,110 @@ $(document).ready(function() {
         $('#kpGrandDelivery').text(maxDeliveryText);
     }
 
-    $('#serviceSearch').on('input focus', function() {
-        let q = Number($('input[name="C5"]:visible').val()) || 1;
+    createServiceSlot();
+    $('#btn-add-service').click(createServiceSlot);
+
+    $(document).on('input focus', '.slot-search', function() {
+        let $slot = $(this).closest('.service-slot');
         let query = $(this).val().toLowerCase().trim();
-        let $res = $('#searchResults');
-        let markup = Number($('tr:visible input[name="markup"]').val()) || 1.35;
-        $res.empty();
-
-        if (query.length === 0) { $res.hide(); return; }
-
-        let matches = servicesCatalog.filter(s => {
-            let words = query.split(' ');
-            return words.every(w => s.keywords.toLowerCase().includes(w) || s.name.toLowerCase().includes(w));
+        let $results = $slot.find('.slot-results').empty();
+        if (!query) { $results.hide(); return; }
+        let matches = servicesCatalog.filter(function(service) {
+            return query.split(/\s+/).every(function(word) {
+                return service.keywords.toLowerCase().includes(word) || service.name.toLowerCase().includes(word);
+            });
         });
-
-        if (matches.length === 0) {
-            $res.append('<div class="search-item" style="color: #888;">Ничего не найдено</div>').show();
+        if (!matches.length) {
+            $results.append('<div class="search-item" style="color: #888;">Ничего не найдено</div>').show();
             return;
         }
-
-        matches.forEach(item => {
-            let rawCost = item.fn(q);
-            let displayCost = rawCost;
-            let taxLabel = item.vat ? 'с НДС' : 'без НДС';
-
-            if (!item.vat) {
-                let f4_markup = markup * 1.16;
-                let f_f4 = rawCost * f4_markup;
-                displayCost = Math.round(rawCost + (f_f4 * 16 / 116));
-                taxLabel = `расход: <strong>${displayCost.toLocaleString('ru-RU')} теңге</strong> (прайс ${rawCost.toLocaleString('ru-RU')} без НДС)`;
-            } else {
-                taxLabel = `расход: <strong>${displayCost.toLocaleString('ru-RU')} теңге</strong> (с НДС)`;
-            }
-
-            $res.append(`
-                <div class="search-item" data-id="${item.id}">
-                    ${item.name}<br>
-                    <span style="font-size:11px; color:#555;">${taxLabel}</span>
-                </div>
-            `);
-        });
-        $res.show();
-    });
-
-    $(document).on('click', '#searchResults .search-item', function() {
-        let id = $(this).data('id');
-        activeService = servicesCatalog.find(s => s.id === id);
-        if (activeService) {
-            $('#serviceSearch').val(activeService.name);
-            $('#searchResults').hide();
-            $('#clearService, #delivery-wrap').show();
-
-            $('#extraParamsWrap').toggle(!!(activeService.isDtfArea || activeService.isCliche));
-            $('#clicheParams').toggle(!!activeService.isCliche);
-            $('#dtfParams').toggle(!!activeService.isDtfArea);
-
-            calc();
-        }
-    });
-
-    $('#clearService').click(function() {
-        activeService = null;
-        $('#serviceSearch').val('');
-        $('#clearService, #delivery-wrap, #extraParamsWrap, #searchResults, #selectedServiceCostBadge').hide();
-        calc();
-    });
-
-    $('#btn-show-second-service').click(function() {
-        $('#second-supplier-panel').data('open', true).slideDown(150);
-        $(this).hide();
-    });
-
-    $('#btn-remove-second-service').click(function() {
-        activeService2 = null;
-        $('#second-supplier-panel').data('open', false).slideUp(150);
-        $('#serviceSearch2').val('');
-        $('#clearService2, #delivery-wrap2, #extraParamsWrap2, #searchResults2, #selectedServiceCostBadge2').hide();
-        $('#btn-show-second-service').show();
-        calc();
-    });
-
-    $('#serviceSearch2').on('input focus', function() {
-        let q = Number($('input[name="C5"]:visible').val()) || 1;
-        let query = $(this).val().toLowerCase().trim();
-        let $res = $('#searchResults2');
+        let quantity = Number($('input[name="C5"]:visible').val()) || 1;
         let markup = Number($('tr:visible input[name="markup"]').val()) || 1.35;
-        $res.empty();
-
-        if (query.length === 0) { $res.hide(); return; }
-
-        let matches = servicesCatalog.filter(s => {
-            let words = query.split(' ');
-            return words.every(w => s.keywords.toLowerCase().includes(w) || s.name.toLowerCase().includes(w));
-        });
-
-        if (matches.length === 0) {
-            $res.append('<div class="search-item" style="color: #888;">Ничего не найдено</div>').show();
-            return;
-        }
-
-        matches.forEach(item => {
-            let rawCost = item.fn(q);
+        matches.forEach(function(service) {
+            let rawCost = service.fn(quantity);
             let displayCost = rawCost;
-            let taxLabel = item.vat ? 'с НДС' : 'без НДС';
-
-            if (!item.vat) {
-                let f4_markup = markup * 1.16;
-                let f_f4 = rawCost * f4_markup;
-                displayCost = Math.round(rawCost + (f_f4 * 16 / 116));
-                taxLabel = `расход: <strong>${displayCost.toLocaleString('ru-RU')} теңге</strong> (прайс ${rawCost.toLocaleString('ru-RU')} без НДС)`;
-            } else {
+            let taxLabel;
+            if (service.vat) {
                 taxLabel = `расход: <strong>${displayCost.toLocaleString('ru-RU')} теңге</strong> (с НДС)`;
+            } else {
+                displayCost = Math.round(rawCost + (rawCost * markup * 1.16 * 16 / 116));
+                taxLabel = `расход: <strong>${displayCost.toLocaleString('ru-RU')} теңге</strong> (прайс ${rawCost.toLocaleString('ru-RU')} без НДС)`;
             }
-
-            $res.append(`
-                <div class="search-item" data-id="${item.id}">
-                    ${item.name}<br>
-                    <span style="font-size:11px; color:#555;">${taxLabel}</span>
-                </div>
-            `);
+            $results.append(`<div class="search-item" data-id="${service.id}">${service.name}<br><span style="font-size:11px; color:#555;">${taxLabel}</span></div>`);
         });
-        $res.show();
+        $results.show();
     });
 
-    $(document).on('click', '#searchResults2 .search-item', function() {
-        let id = $(this).data('id');
-        activeService2 = servicesCatalog.find(s => s.id === id);
-        if (activeService2) {
-            $('#serviceSearch2').val(activeService2.name);
-            $('#searchResults2').hide();
-            $('#clearService2, #delivery-wrap2').show();
-
-            $('#extraParamsWrap2').toggle(!!(activeService2.isDtfArea || activeService2.isCliche));
-            $('#clicheParams2').toggle(!!activeService2.isCliche);
-            $('#dtfParams2').toggle(!!activeService2.isDtfArea);
-
-            calc();
-        }
-    });
-
-    $('#clearService2').click(function() {
-        activeService2 = null;
-        $('#serviceSearch2').val('');
-        $('#clearService2, #delivery-wrap2, #extraParamsWrap2, #searchResults2, #selectedServiceCostBadge2').hide();
+    $(document).on('click', '.slot-results .search-item', function() {
+        let $slot = $(this).closest('.service-slot');
+        let state = getServiceSlot($slot.data('uid'));
+        let service = servicesCatalog.find(function(item) { return item.id === $(this).data('id'); }.bind(this));
+        if (!state || !service) return;
+        state.service = service;
+        $slot.find('.slot-search').val(service.name);
+        $slot.find('.slot-results').hide();
+        $slot.find('.slot-clear, .slot-delivery').show();
+        $slot.find('.slot-extra').toggle(!!(service.isDtfArea || service.isCliche));
+        $slot.find('.slot-cliche').toggle(!!service.isCliche);
+        $slot.find('.slot-dtf').toggle(!!service.isDtfArea);
         calc();
     });
 
-    $(document).click(function(e) {
-        if (!$(e.target).closest('.search-box-wrap').length) {
-            $('#searchResults, #searchResults2, #ppSearchResults').hide();
-        }
-    });
-
-    $('#addDtfPoint').click(function() {
-        $('#dtf-points').append(`
-            <span class="dtf-point" style="margin-left: 5px;">
-                <input type="number" class="mm-input dtf-w" value="100" min="0"> x 
-                <input type="number" class="mm-input dtf-h" value="100" min="0">
-                <button type="button" class="remove-dtf-point" style="color:red; cursor:pointer; border:none; background:none;">✖</button>
-            </span>
-        `);
+    $(document).on('click', '.slot-clear', function() {
+        let $slot = $(this).closest('.service-slot');
+        let state = getServiceSlot($slot.data('uid'));
+        if (state) state.service = null;
+        $slot.find('.slot-search').val('');
+        $slot.find('.slot-clear, .slot-delivery, .slot-extra, .slot-results, .slot-badge').hide();
         calc();
     });
+
+    $(document).on('click', '.btn-remove-slot', function() {
+        if (servicesList.length <= 1) return;
+        let $slot = $(this).closest('.service-slot');
+        let uid = Number($slot.data('uid'));
+        servicesList = servicesList.filter(function(slot) { return slot.uid !== uid; });
+        $slot.remove();
+        updateServiceSlotTitles();
+        calc();
+    });
+
+    $(document).on('change', '.slot-add-delivery', function() {
+        let state = getServiceSlot($(this).closest('.service-slot').data('uid'));
+        if (state) state.withDelivery = $(this).is(':checked');
+        calc();
+    });
+
+    $(document).on('click', '.slot-add-dtf-point', function() {
+        let $points = $(this).siblings('.slot-dtf-points');
+        $points.append('<span class="dtf-point" style="margin-left: 5px;"><input type="number" class="mm-input dtf-w" value="100" min="0"> x <input type="number" class="mm-input dtf-h" value="100" min="0"> <button type="button" class="remove-dtf-point" style="color:red; cursor:pointer; border:none; background:none;">✖</button></span>');
+        calc();
+    });
+
     $(document).on('click', '.remove-dtf-point', function() {
         $(this).closest('.dtf-point').remove();
         calc();
     });
 
-    $('#addDtfPoint2').click(function() {
-        $('#dtf-points2').append(`
-            <span class="dtf-point2" style="margin-left: 5px;">
-                <input type="number" class="mm-input dtf-w2" value="100" min="0"> x 
-                <input type="number" class="mm-input dtf-h2" value="100" min="0">
-                <button type="button" class="remove-dtf-point2" style="color:red; cursor:pointer; border:none; background:none;">✖</button>
-            </span>
-        `);
-        calc();
-    });
-    $(document).on('click', '.remove-dtf-point2', function() {
-        $(this).closest('.dtf-point2').remove();
+    $(document).on('change', '.slot-cliche-exists', function() {
+        let $block = $(this).closest('.service-slot').find('.slot-cliche-area-block');
+        $block.css('opacity', $(this).is(':checked') ? '0.4' : '1');
         calc();
     });
 
-    $('#clicheExists').change(function() {
-        $('#clicheAreaBlock').css('opacity', $(this).is(':checked') ? '0.4' : '1');
-        calc();
-    });
-    $('#clicheW, #clicheH').on('input', function() {
-        let w = Number($('#clicheW').val()) || 0;
-        let h = Number($('#clicheH').val()) || 0;
+    $(document).on('input change', '.slot-cliche-w, .slot-cliche-h, .dtf-w, .dtf-h', function() {
+        let $slot = $(this).closest('.service-slot');
+        let w = Number($slot.find('.slot-cliche-w').val()) || 0;
+        let h = Number($slot.find('.slot-cliche-h').val()) || 0;
         let area = (w > 0 && h > 0) ? ((w + 10) * (h + 10)) / 100 : 0;
-        $('#clicheAreaOut').text(`(${area.toFixed(1)} см²)`);
+        $slot.find('.slot-cliche-area-out').text(`(${area.toFixed(1)} см²)`);
         calc();
     });
 
-    $('#clicheExists2').change(function() {
-        $('#clicheAreaBlock2').css('opacity', $(this).is(':checked') ? '0.4' : '1');
-        calc();
-    });
-    $('#clicheW2, #clicheH2').on('input', function() {
-        let w = Number($('#clicheW2').val()) || 0;
-        let h = Number($('#clicheH2').val()) || 0;
-        let area = (w > 0 && h > 0) ? ((w + 10) * (h + 10)) / 100 : 0;
-        $('#clicheAreaOut2').text(`(${area.toFixed(1)} см²)`);
-        calc();
+    $(document).click(function(e) {
+        if (!$(e.target).closest('.search-box-wrap').length) {
+            $('.slot-results, #ppSearchResults').hide();
+        }
     });
 
     $('input[name="K1"]').on('input', function() {
@@ -1364,6 +1229,8 @@ $(document).ready(function() {
 
     $('input, select').on('input change keyup', () => calc());
     calc();
+    window.souvenirServicesReady = true;
+    window.dispatchEvent(new Event('souvenir-services-ready'));
 });
 
 var T = {};
@@ -1372,6 +1239,10 @@ var R = {};
 
 function calc() {
     let hasError = false;
+    var origin = currentMode === 'propaket'
+        ? 'kazakhstan'
+        : ($('tr:visible input[name="origin"]:checked').val() || 'kazakhstan');
+    $('#currency-symbol').text(origin === 'russia' ? '₽' : 'теңге');
 
     let $f6 = $('tr:visible input[name="F6"]');
     T.F6 = $f6.length ? checkStrictNum($f6, 0) : 0;
@@ -1424,30 +1295,22 @@ function calc() {
     }
 
     if (currentMode === 'order' || currentMode === 'sklad') {
-        if (activeService && activeService.isCliche && !$('#clicheExists').is(':checked')) {
-            let cw = checkStrictNum($('#clicheW'), 50);
-            let ch = checkStrictNum($('#clicheH'), 50);
-            if (isNaN(cw) || isNaN(ch)) hasError = true;
-        }
-        if (activeService2 && activeService2.isCliche && !$('#clicheExists2').is(':checked')) {
-            let cw2 = checkStrictNum($('#clicheW2'), 50);
-            let ch2 = checkStrictNum($('#clicheH2'), 50);
-            if (isNaN(cw2) || isNaN(ch2)) hasError = true;
-        }
-        if (activeService && activeService.isDtfArea) {
-            $('.dtf-point').each(function() {
-                let w = checkStrictNum($(this).find('.dtf-w'), 100);
-                let h = checkStrictNum($(this).find('.dtf-h'), 100);
-                if (isNaN(w) || isNaN(h)) hasError = true;
-            });
-        }
-        if (activeService2 && activeService2.isDtfArea) {
-            $('.dtf-point2').each(function() {
-                let w = checkStrictNum($(this).find('.dtf-w2'), 100);
-                let h = checkStrictNum($(this).find('.dtf-h2'), 100);
-                if (isNaN(w) || isNaN(h)) hasError = true;
-            });
-        }
+        servicesList.forEach(function(slot) {
+            if (!slot.service) return;
+            let $slot = $(`.service-slot[data-uid="${slot.uid}"]`);
+            if (slot.service.isCliche && !$slot.find('.slot-cliche-exists').is(':checked')) {
+                let cw = checkStrictNum($slot.find('.slot-cliche-w'), 50);
+                let ch = checkStrictNum($slot.find('.slot-cliche-h'), 50);
+                if (isNaN(cw) || isNaN(ch)) hasError = true;
+            }
+            if (slot.service.isDtfArea) {
+                $slot.find('.dtf-point').each(function() {
+                    let w = checkStrictNum($(this).find('.dtf-w'), 100);
+                    let h = checkStrictNum($(this).find('.dtf-h'), 100);
+                    if (isNaN(w) || isNaN(h)) hasError = true;
+                });
+            }
+        });
     } else if (currentMode === 'propaket') {
         if (selectedProduct && selectedProduct.isGroupedSquare) {
             let cw = checkStrictNum($('#ppCustomW'), 1000);
@@ -1468,7 +1331,7 @@ function calc() {
             $('input[name="usdUnit"]').val('$ NaN');
             $('input[name="usdTotal"]').val('$ NaN');
         }
-        $('#selectedServiceCostBadge, #selectedServiceCostBadge2, #ppCostBadge').hide();
+        $('.slot-badge, #ppCostBadge').hide();
         return;
     }
 
@@ -1481,12 +1344,10 @@ function calc() {
     markup = Math.max(markup, 1.25);                                
     markup = Math.min(markup, 9);
 
-    var origin = $('tr:visible input[name="origin"]:checked').val() || 'kazakhstan';
     var vat = $('tr:visible input[name="vat"]:checked').val() || 'withVAT';
 
     // 1. Расчет для вкладки "ПРОДУКЦИЯ / ПАКЕТЫ"
     if (currentMode === 'propaket') {
-        origin = 'kazakhstan'; 
         vat = 'withVAT';
         
         let itemCost = 0;
@@ -1562,56 +1423,31 @@ function calc() {
     } 
     // 2. Расчет нанесений 1 и 2 — для "ЗАКАЗ" и "СКЛАД"
     else if (currentMode === 'order' || currentMode === 'sklad') {
-        if (activeService) {
-            let rawCost = activeService.fn(quantity);
-            if (activeService.vat) {
+        servicesList.forEach(function(slot) {
+            let $slot = $(`.service-slot[data-uid="${slot.uid}"]`);
+            syncServiceSlotInputs(slot);
+            if (!slot.service) {
+                $slot.find('.slot-badge').hide();
+                return;
+            }
+            let rawCost = getServiceCost(slot, quantity);
+            if (slot.service.vat) {
                 supplierCostWithVat += rawCost;
-                $('#selectedServiceCostBadge').html(`Расход: <strong>${rawCost.toLocaleString('ru-RU')} теңге</strong> (с НДС)`).show();
+                $slot.find('.slot-badge').html(`Расход: <strong>${rawCost.toLocaleString('ru-RU')} теңге</strong> (с НДС)`).show();
             } else {
                 supplierCostWithoutVat += rawCost;
-                let f4_markup = markup * 1.16;
-                let f_f4 = rawCost * f4_markup;
-                let realExp = Math.round(rawCost + (f_f4 * 16 / 116));
-                $('#selectedServiceCostBadge').html(`Расход: <strong>${realExp.toLocaleString('ru-RU')} теңге</strong> <span style="font-size:11px; color:#555;">(прайс ${rawCost.toLocaleString('ru-RU')} без НДС)</span>`).show();
+                let realExpense = Math.round(rawCost + (rawCost * markup * 1.16 * 16 / 116));
+                $slot.find('.slot-badge').html(`Расход: <strong>${realExpense.toLocaleString('ru-RU')} теңге</strong> <span style="font-size:11px; color:#555;">(прайс ${rawCost.toLocaleString('ru-RU')} без НДС)</span>`).show();
             }
-
-            if ($('#addDeliveryCost').is(':checked')) {
-                autoCashExpense += (activeService.supplier === 'vipline') ? 4000 : 3000;
+            if (slot.withDelivery) {
+                autoCashExpense += slot.service.supplier === 'vipline' ? 4000 : 3000;
             }
-        } else {
-            $('#selectedServiceCostBadge').hide();
-        }
-
-        if (activeService2) {
-            let rawCost2 = getService2Cost(quantity);
-            if (activeService2.vat) {
-                supplierCostWithVat += rawCost2;
-                $('#selectedServiceCostBadge2').html(`Расход: <strong>${rawCost2.toLocaleString('ru-RU')} теңге</strong> (с НДС)`).show();
-            } else {
-                supplierCostWithoutVat += rawCost2;
-                let f4_markup = markup * 1.16;
-                let f_f4 = rawCost2 * f4_markup;
-                let realExp = Math.round(rawCost2 + (f_f4 * 16 / 116));
-                $('#selectedServiceCostBadge2').html(`Расход: <strong>${realExp.toLocaleString('ru-RU')} теңге</strong> <span style="font-size:11px; color:#555;">(прайс ${rawCost2.toLocaleString('ru-RU')} без НДС)</span>`).show();
-            }
-
-            if ($('#addDeliveryCost2').is(':checked')) {
-                autoCashExpense += (activeService2.supplier === 'vipline') ? 4000 : 3000;
-            }
-        } else {
-            $('#selectedServiceCostBadge2').hide();
-        }
+        });
     }
     
     T.F4 += supplierCostWithoutVat; 
     T.F3 += supplierCostWithVat;
     T.F5 += autoCashExpense; 
-    
-    if (origin === 'kazakhstan') {
-        $('#currency-symbol').text('теңге');
-    } else if (origin === 'russia') {
-        $('#currency-symbol').text('₽');
-    }
     
     addDiscount = Math.max(0, Math.min(addDiscount, 90)); 
     var addDiscountK = 1 - addDiscount / 100;                 

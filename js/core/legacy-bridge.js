@@ -3,6 +3,35 @@
   const pendingLoads = {};
   const observers = {};
   const listeners = new Set();
+  const souvenirSupplierOrigins = {
+    'happygifts.ru': 'russia',
+    'gifts.ru': 'russia',
+    'portobello.ru': 'russia',
+    'artegifts.by': 'kazakhstan',
+    'oasiscatalog.com': 'kazakhstan',
+    'ucontay.kz': 'kazakhstan'
+  };
+
+  function souvenirOriginForUrl(value) {
+    let url;
+    try {
+      url = new URL(String(value || ''));
+    } catch (error) {
+      return null;
+    }
+    if (url.protocol !== 'https:') return null;
+    const host = url.hostname.toLowerCase();
+    const supplier = Object.keys(souvenirSupplierOrigins).find(function (domain) {
+      return host === domain || host.endsWith('.' + domain);
+    });
+    return supplier ? souvenirSupplierOrigins[supplier] : null;
+  }
+
+  window.addEventListener('message', function (event) {
+    const frame = frames.poly;
+    if (!frame || event.source !== frame.contentWindow || !event.data || event.data.type !== 'GOOGLE_SAVE_RESULT') return;
+    window.dispatchEvent(new CustomEvent('history:google-save-result', { detail: event.data }));
+  });
 
   function notify() {
     listeners.forEach(function (listener) { listener(); });
@@ -29,6 +58,97 @@
     const value = String(element.value || '').replace(/[\s\u00a0]/g, '').replace(',', '.');
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
+  }
+
+  function plainText(value) {
+    return String(value == null ? '' : value).replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]*>/g, '').trim();
+  }
+
+  function souvenirServiceSlots(win, doc) {
+    if (typeof win.getServiceSlot === 'function') {
+      return Array.from(doc.querySelectorAll('.service-slot')).map(function (element) {
+        return win.getServiceSlot(Number(element.dataset.uid));
+      }).filter(function (slot) { return slot && slot.service; });
+    }
+    return [win.activeService, win.activeService2].filter(Boolean).map(function (service, index) {
+      return { uid: index + 1, service: service };
+    });
+  }
+
+  function souvenirCalculationOptions(context) {
+    const inputNames = ['C6', 'F3', 'F4', 'F4_simp', 'F5', 'F6', 'F7', 'markup', 'addDiscount', 'K1', 'K3'];
+    const inputs = {};
+    inputNames.forEach(function (name) {
+      const field = visibleField(context.doc, 'input[name="' + name + '"]');
+      if (field) inputs[name] = field.value;
+    });
+    const vatField = Array.from(context.doc.querySelectorAll('input[name="vat"]')).find(function (field) {
+      return field.checked && isVisible(field, context.doc);
+    });
+    const usdRate = visibleField(context.doc, 'input[name="usdRate"]');
+    const showUsd = context.doc.getElementById('showUsd');
+    return {
+      inputs: inputs,
+      vat: vatField ? vatField.value : 'withVAT',
+      showUsd: Boolean(showUsd && showUsd.checked),
+      usdRate: usdRate ? usdRate.value : '480'
+    };
+  }
+
+  function restoreSouvenirCalculationOptions(context, options) {
+    if (!options || !options.inputs || typeof options.inputs !== 'object') return false;
+    Object.keys(options.inputs).forEach(function (name) {
+      const field = visibleField(context.doc, 'input[name="' + name + '"]');
+      if (field) field.value = options.inputs[name];
+    });
+    if (options.vat) {
+      const vatField = Array.from(context.doc.querySelectorAll('input[name="vat"]')).find(function (field) {
+        return field.value === options.vat && isVisible(field, context.doc);
+      });
+      if (vatField) vatField.checked = true;
+    }
+    const showUsd = context.doc.getElementById('showUsd');
+    if (showUsd && options.showUsd !== undefined) {
+      showUsd.checked = Boolean(options.showUsd);
+      showUsd.dispatchEvent(new context.win.Event('change', { bubbles: true }));
+    }
+    const usdRate = context.doc.getElementById('usdRate');
+    if (usdRate && options.usdRate !== undefined) usdRate.value = options.usdRate;
+    return true;
+  }
+
+  const propaketFields = ['ppSubtype', 'ppSize', 'ppCustomW', 'ppCustomH', 'ppFront', 'ppBack', 'ppBoxInside', 'optHandle', 'optBow', 'ppAddDelivery'];
+
+  function propaketOptions(context) {
+    const fields = {};
+    propaketFields.forEach(function (id) {
+      const field = context.doc.getElementById(id);
+      if (field) fields[id] = field.type === 'checkbox' ? field.checked : field.value;
+    });
+    return { productId: context.product.id, productName: context.product.name, fields: fields };
+  }
+
+  function restorePropaketOptions(context, options) {
+    if (!options || !options.productId || !options.productName || !options.fields) return false;
+    const search = context.doc.getElementById('ppSearch');
+    if (!search) return false;
+    search.value = options.productName;
+    search.dispatchEvent(new context.win.Event('input', { bubbles: true }));
+    const result = Array.from(context.doc.querySelectorAll('#ppSearchResults .search-item')).find(function (entry) {
+      return String(entry.dataset.id) === String(options.productId);
+    });
+    if (!result) return false;
+    result.click();
+    for (const id of propaketFields) {
+      if (!Object.prototype.hasOwnProperty.call(options.fields, id)) continue;
+      const field = context.doc.getElementById(id);
+      if (!field) return false;
+      if (field.type === 'checkbox') field.checked = Boolean(options.fields[id]);
+      else field.value = options.fields[id];
+      field.dispatchEvent(new context.win.Event('change', { bubbles: true }));
+      if (field.type !== 'checkbox' && field.value !== String(options.fields[id])) return false;
+    }
+    return true;
   }
 
   function frameWindow(moduleName) {
@@ -90,31 +210,92 @@
     }
   }
 
+  function discardFrame(moduleName, frame) {
+    if (!frame || frames[moduleName] !== frame) return;
+    delete frames[moduleName];
+    delete pendingLoads[moduleName];
+    if (moduleName === 'souvenir' && observers.souvenirCompactResize) {
+      observers.souvenirCompactResize.disconnect();
+      delete observers.souvenirCompactResize;
+    }
+    if (frame.parentNode) frame.parentNode.removeChild(frame);
+  }
+
   function load(moduleName) {
     if (pendingLoads[moduleName]) return pendingLoads[moduleName];
     if (frames[moduleName]) return Promise.resolve(frames[moduleName]);
 
+    let frame;
     pendingLoads[moduleName] = new Promise(function (resolve, reject) {
       const slot = document.getElementById('legacy-' + moduleName + '-slot');
-      const frame = document.createElement('iframe');
+      frame = document.createElement('iframe');
       frame.className = 'legacy-frame';
       frame.title = moduleName === 'poly' ? 'Полиграфический калькулятор' : 'Сувенирный калькулятор';
-      frame.src = moduleName === 'poly' ? '_legacy/poly/index.html' : '_legacy/souvenir/index.html';
+      frame.src = moduleName === 'poly' ? '_legacy/poly/index.html?v=3' : '_legacy/souvenir/index.html?v=3';
       frames[moduleName] = frame;
       frame.addEventListener('load', function () {
         try {
           hideLegacyQuote(moduleName, frame);
           bindModuleEvents(moduleName, frame);
-          resolve(frame);
-          notify();
+          if (moduleName !== 'souvenir' || frame.contentWindow.souvenirServicesReady === true) {
+            resolve(frame);
+            notify();
+            return;
+          }
+          const iframeWindow = frame.contentWindow;
+          const readyEvent = 'souvenir-services-ready';
+          const readinessTimeout = window.setTimeout(function () {
+            iframeWindow.removeEventListener(readyEvent, finishSouvenirLoad);
+            reject(new Error('Сувенирный калькулятор не завершил инициализацию'));
+          }, 5000);
+          function finishSouvenirLoad() {
+            window.clearTimeout(readinessTimeout);
+            resolve(frame);
+            notify();
+          }
+          iframeWindow.addEventListener(readyEvent, finishSouvenirLoad, { once: true });
+          if (iframeWindow.souvenirServicesReady === true) finishSouvenirLoad();
         } catch (error) {
           reject(error);
         }
       });
       frame.addEventListener('error', reject, { once: true });
       slot.appendChild(frame);
+    }).catch(function (error) {
+      if (frame) discardFrame(moduleName, frame);
+      else delete pendingLoads[moduleName];
+      throw error;
     });
     return pendingLoads[moduleName];
+  }
+
+  function waitForSouvenirReady() {
+    const frame = frames.souvenir;
+    if (!frame) return Promise.reject(new Error('Сувенирный калькулятор не загружен'));
+    return new Promise(function (resolve, reject) {
+      let timeout;
+      function finish() {
+        const win = frame.contentWindow;
+        if (!win || win.souvenirServicesReady !== true) return;
+        window.clearTimeout(timeout);
+        frame.removeEventListener('load', onLoad);
+        win.removeEventListener('souvenir-services-ready', finish);
+        resolve();
+      }
+      function onLoad() {
+        const win = frame.contentWindow;
+        if (win) win.addEventListener('souvenir-services-ready', finish, { once: true });
+        finish();
+      }
+      timeout = window.setTimeout(function () {
+        frame.removeEventListener('load', onLoad);
+        if (frame.contentWindow) frame.contentWindow.removeEventListener('souvenir-services-ready', finish);
+        discardFrame('souvenir', frame);
+        reject(new Error('Сувенирный калькулятор не завершил загрузку'));
+      }, 5000);
+      frame.addEventListener('load', onLoad);
+      window.setTimeout(onLoad, 0);
+    });
   }
 
   function polyCanAdd() {
@@ -143,7 +324,8 @@
       return field.checked && isVisible(field, doc);
     });
     const product = win.selectedProduct;
-    const serviceNames = [win.activeService && win.activeService.name, win.activeService2 && win.activeService2.name].filter(Boolean);
+    const serviceSlots = souvenirServiceSlots(win, doc);
+    const serviceNames = serviceSlots.map(function (slot) { return slot.service.name; }).filter(Boolean);
     const productSelect = visibleField(doc, 'select[name="product"]');
     const canAddProduct = mode === 'propaket' && product && total > 0;
     const canAddService = mode !== 'propaket' && total > 0 && (serviceNames.length > 0 || mode === 'order' || (mode === 'sklad' && productSelect && productSelect.value));
@@ -160,6 +342,7 @@
       souvenirMode: mode,
       stockProductValue: mode === 'sklad' && productSelect ? productSelect.value : '',
       product: product,
+      serviceSlots: serviceSlots,
       serviceNames: serviceNames,
       productSelect: productSelect,
       canAdd: Boolean(canAddProduct || canAddService)
@@ -170,9 +353,16 @@
     return moduleName === 'poly' ? polyCanAdd() : Boolean(souvenirContext() && souvenirContext().canAdd);
   }
 
+  function canAddDecoration() {
+    const context = souvenirContext();
+    if (!context || !context.canAdd) return false;
+    if (context.mode === 'order') return context.serviceSlots.length > 0;
+    return true;
+  }
+
   function getDecorationDetails(context) {
-    const services = [context.win.activeService, context.win.activeService2].filter(Boolean);
-    return services.map(function (service, index) {
+    return context.serviceSlots.map(function (slot, index) {
+      const service = slot.service;
       const name = String(service.name || '').toLowerCase();
       let method = String(service.name || '').split(':')[0].trim();
       if (service.isDtfArea || /дтф|dtf/.test(name)) method = 'ДТФ';
@@ -185,18 +375,25 @@
 
       let details = 'Нанесение логотипа методом ' + method;
       if (service.isDtfArea) {
-        const points = Array.from(context.doc.querySelectorAll(index === 1 ? '.dtf-point2' : '.dtf-point'))
-          .map(function (point) {
+        const points = Array.isArray(slot.dtfPoints) && slot.dtfPoints.length
+          ? slot.dtfPoints.map(function (point) {
+            const width = Number(point.w) || 0;
+            const height = Number(point.h) || 0;
+            return width > 0 && height > 0 ? width + ' x ' + height + ' мм' : '';
+          }).filter(Boolean)
+          : Array.from(context.doc.querySelectorAll(index === 1 ? '.dtf-point2' : '.dtf-point')).map(function (point) {
             const width = Number(point.querySelector(index === 1 ? '.dtf-w2' : '.dtf-w')?.value) || 0;
             const height = Number(point.querySelector(index === 1 ? '.dtf-h2' : '.dtf-h')?.value) || 0;
             return width > 0 && height > 0 ? width + ' x ' + height + ' мм' : '';
           }).filter(Boolean);
         if (points.length) details += ' (размеры: ' + points.join(', ') + ')';
       } else if (service.isCliche) {
-        const suffix = index === 1 ? '2' : '';
-        const width = Number(context.doc.getElementById('clicheW' + suffix)?.value) || 0;
-        const height = Number(context.doc.getElementById('clicheH' + suffix)?.value) || 0;
-        if (width > 0 && height > 0) details += ' (клише ' + width + ' x ' + height + ' мм)';
+        const clicheExists = slot.clicheExists !== undefined
+          ? slot.clicheExists
+          : Boolean(context.doc.getElementById(index === 1 ? 'clicheExists2' : 'clicheExists')?.checked);
+        const width = Number(slot.clicheW) || Number(context.doc.getElementById(index === 1 ? 'clicheW2' : 'clicheW')?.value) || 0;
+        const height = Number(slot.clicheH) || Number(context.doc.getElementById(index === 1 ? 'clicheH2' : 'clicheH')?.value) || 0;
+        if (!clicheExists && width > 0 && height > 0) details += ' (клише ' + width + ' x ' + height + ' мм)';
       }
       return details;
     }).join('\n');
@@ -266,6 +463,9 @@
         details: item.desc,
         quantity: item.qty,
         unitPrice: item.unit,
+        souvenirMode: 'propaket',
+        calculationOptions: souvenirCalculationOptions(context),
+        propaketOptions: propaketOptions(context),
         productionCost: numericValue(costField),
         productionCostIncludesFinish: true
       });
@@ -280,7 +480,7 @@
     const stockProductName = contextAfterCalc.mode === 'sklad' && productName
       ? productName.charAt(0).toLocaleUpperCase('ru-RU') + productName.slice(1)
       : productName;
-    const hasSelectedServices = Boolean(win.activeService || win.activeService2);
+    const hasSelectedServices = contextAfterCalc.serviceSlots.length > 0;
     const decorationDetails = hasSelectedServices ? getDecorationDetails(contextAfterCalc) : '';
     const title = contextAfterCalc.mode === 'sklad' && productName
       ? stockProductName
@@ -290,7 +490,9 @@
       : decorationDetails;
     const delivery = typeof win.getDeliveryDays === 'function' ? win.getDeliveryDays(contextAfterCalc.quantity) : '';
     const costField = visibleField(contextAfterCalc.doc, 'input[name="F9"]');
-    const isNotebookEmboss = Boolean(win.activeService && win.activeService.isCliche && /блокн|ежеднев/i.test(String(productName || '') + ' ' + String(decorationDetails || '')))
+    const isNotebookEmboss = Boolean(contextAfterCalc.serviceSlots.some(function (slot) {
+      return slot.service.isCliche;
+    }) && /блокн|ежеднев/i.test(String(productName || '') + ' ' + String(decorationDetails || '')))
       || /блокн|ежеднев/i.test(String(productName || '') + ' ' + String(decorationDetails || ''));
     const notebookEmbossText = isNotebookEmboss ? 'Тиснение обложки блокнота: приладка + удар/тираж + клише по размеру' : '';
 
@@ -300,6 +502,19 @@
       details: [details, notebookEmbossText].filter(Boolean).join('\n'),
       annotationText: decorationDetails,
       services: contextAfterCalc.serviceNames.slice(),
+      calculationOptions: souvenirCalculationOptions(contextAfterCalc),
+      serviceOptions: contextAfterCalc.serviceSlots.map(function (slot) {
+        return {
+          name: slot.service.name,
+          withDelivery: slot.withDelivery !== false,
+          clicheExists: Boolean(slot.clicheExists),
+          clicheW: Number(slot.clicheW) || 0,
+          clicheH: Number(slot.clicheH) || 0,
+          dtfPoints: Array.isArray(slot.dtfPoints) ? slot.dtfPoints.map(function (point) {
+            return { w: Number(point.w) || 0, h: Number(point.h) || 0 };
+          }) : []
+        };
+      }),
       quantity: contextAfterCalc.quantity,
       unitPrice: contextAfterCalc.unitPrice,
       total: contextAfterCalc.total,
@@ -314,9 +529,9 @@
       productionCostIncludesFinish: hasSelectedServices,
       delivery: delivery,
       embossing: isNotebookEmboss ? 'notebook' : undefined,
-      clicheExists: Boolean(win.activeService && win.activeService.isCliche && contextAfterCalc.doc.getElementById('clicheExists') && contextAfterCalc.doc.getElementById('clicheExists').checked),
-      clicheW: Number(contextAfterCalc.doc.getElementById('clicheW')?.value) || 0,
-      clicheH: Number(contextAfterCalc.doc.getElementById('clicheH')?.value) || 0
+      clicheExists: contextAfterCalc.serviceSlots.some(function (slot) { return slot.service.isCliche && slot.clicheExists; }),
+      clicheW: Number(contextAfterCalc.serviceSlots.find(function (slot) { return slot.service.isCliche; })?.clicheW) || 0,
+      clicheH: Number(contextAfterCalc.serviceSlots.find(function (slot) { return slot.service.isCliche; })?.clicheH) || 0
     };
   }
 
@@ -331,6 +546,18 @@
     return true;
   }
 
+  function setSouvenirOrigin(origin) {
+    if (origin !== 'russia' && origin !== 'kazakhstan') return false;
+    const frame = frames.souvenir;
+    const win = frameWindow('souvenir');
+    const field = frame && frame.contentDocument && frame.contentDocument.getElementById(origin);
+    if (!win || !field || typeof win.calc !== 'function') return false;
+    field.checked = true;
+    win.calc();
+    notify();
+    return true;
+  }
+
   function setSouvenirCalculation(annotation, item) {
     if (!annotation) return false;
     const frame = frames.souvenir;
@@ -338,13 +565,24 @@
     const doc = frame && frame.contentDocument;
     if (!win || !doc) return false;
     const souvenirMode = annotation.souvenirMode || (item && item.souvenirMode) || (annotation.stockProductValue ? 'sklad' : 'order');
-    const targetMode = souvenirMode === 'sklad' ? 'sklad' : 'order';
+    const targetMode = ['sklad', 'propaket'].includes(souvenirMode) ? souvenirMode : 'order';
     if (win.currentMode !== targetMode) {
-      const modeButton = doc.getElementById(targetMode === 'sklad' ? 'btn-sklad' : 'btn-order');
+      const modeButton = doc.getElementById('btn-' + targetMode);
       if (modeButton) modeButton.click();
     }
+
     let context = souvenirContext();
     if (!context) return false;
+    if (targetMode === 'propaket') {
+      const productRestored = restorePropaketOptions(context, annotation.propaketOptions);
+      context = souvenirContext();
+      const quantityField = visibleField(context.doc, 'input[name="C5"]');
+      if (quantityField && Number(annotation.quantity) > 0) quantityField.value = String(annotation.quantity);
+      const optionsRestored = restoreSouvenirCalculationOptions(context, annotation.calculationOptions);
+      if (typeof win.calc === 'function') win.calc();
+      notify();
+      return productRestored && optionsRestored;
+    }
     let stockProductRestored = targetMode !== 'sklad';
     if (targetMode === 'sklad' && annotation.stockProductValue && context.productSelect) {
       const matchingOption = Array.from(context.productSelect.options).some(function (option) {
@@ -378,17 +616,165 @@
       if (originField) originField.checked = true;
     }
 
+    const calculationOptionsRestored = restoreSouvenirCalculationOptions(context, annotation.calculationOptions);
     if (typeof context.win.calc === 'function') context.win.calc();
     notify();
-    return targetMode === 'sklad' ? stockProductRestored : hasSourceValues;
+    return targetMode === 'sklad'
+      ? stockProductRestored && calculationOptionsRestored
+      : hasSourceValues && calculationOptionsRestored;
   }
 
-  function setSouvenirServices(serviceNames) {
+  function prepareSouvenirRun(calculation, item) {
+    const frame = frames.souvenir;
+    const win = frameWindow('souvenir');
+    const doc = frame && frame.contentDocument;
+    if (!win || !doc) return false;
+    const mode = calculation.souvenirMode || (item && item.souvenirMode) || 'order';
+    const modeButton = doc.getElementById('btn-' + (['order', 'sklad', 'propaket'].includes(mode) ? mode : 'order'));
+    if (modeButton) modeButton.click();
+    const clearProduct = doc.getElementById('clearSearch');
+    if (clearProduct) clearProduct.click();
+    setSouvenirServices([]);
+    Array.from(doc.querySelectorAll('.service-slot')).forEach(function (slot) {
+      Array.from(slot.querySelectorAll('input')).forEach(function (field) {
+        if (field.type === 'checkbox') field.checked = field.defaultChecked;
+        else field.value = field.defaultValue;
+      });
+      Array.from(slot.querySelectorAll('.dtf-point')).slice(1).forEach(function (point) {
+        const remove = point.querySelector('.remove-dtf-point');
+        if (remove) remove.click();
+      });
+    });
+    const context = souvenirContext();
+    if (!context) return false;
+    ['C3', 'C6', 'F3', 'F4', 'F4_simp', 'F5', 'F6', 'F7', 'markup', 'addDiscount', 'K1', 'K3', 'PB2'].forEach(function (name) {
+      const field = visibleField(doc, 'input[name="' + name + '"]');
+      if (field) field.value = field.defaultValue;
+    });
+    Array.from(doc.querySelectorAll('input[name="vat"]')).forEach(function (field) {
+      if (isVisible(field, doc)) field.checked = field.defaultChecked;
+    });
+    const quantity = visibleField(doc, 'input[name="C5"]');
+    if (quantity) quantity.value = String(Number(calculation.quantity || (item && item.quantity)) || 1);
+    if (context.productSelect) context.productSelect.selectedIndex = 0;
+    const showUsd = doc.getElementById('showUsd');
+    if (showUsd) {
+      showUsd.checked = false;
+      showUsd.dispatchEvent(new win.Event('change', { bubbles: true }));
+    }
+    const optionsRestored = setSouvenirCalculation(calculation, item);
+    if (mode === 'propaket') return optionsRestored;
+    const services = Array.isArray(calculation.services) ? calculation.services : [];
+    const servicesRestored = setSouvenirServices(services, calculation.serviceOptions);
+    return optionsRestored && servicesRestored && (!services.length
+      || (Array.isArray(calculation.serviceOptions) && services.every(function (name, index) {
+        return Boolean(calculation.serviceOptions[index]);
+      })));
+  }
+
+  function setSouvenirServices(serviceNames, serviceOptions) {
     const context = souvenirContext();
     if (!context) return false;
     const names = Array.isArray(serviceNames) ? serviceNames.filter(Boolean) : [];
     const win = context.win;
     const doc = context.doc;
+
+    if (win.souvenirServicesReady === false) return false;
+
+    if (typeof win.getServiceSlot === 'function' && typeof win.createServiceSlot === 'function') {
+      function getSlotElements() {
+        return Array.from(doc.querySelectorAll('.service-slot'));
+      }
+
+      getSlotElements().forEach(function (element) {
+        const state = win.getServiceSlot(Number(element.dataset.uid));
+        if (state && state.service) {
+          const clearButton = element.querySelector('.slot-clear');
+          if (clearButton) clearButton.click();
+        }
+      });
+
+      while (getSlotElements().length < names.length) win.createServiceSlot();
+
+      let restored = true;
+      names.forEach(function (name, index) {
+        const element = getSlotElements()[index];
+        if (!element) {
+          restored = false;
+          return;
+        }
+        const search = element.querySelector('.slot-search');
+        if (!search) {
+          restored = false;
+          return;
+        }
+        search.value = name;
+        search.dispatchEvent(new win.Event('input', { bubbles: true }));
+        const result = Array.from(element.querySelectorAll('.slot-results .search-item')).find(function (item) {
+          const label = item.firstChild && item.firstChild.textContent
+            ? item.firstChild.textContent.trim()
+            : '';
+          return label === name;
+        });
+        if (!result) {
+          restored = false;
+          return;
+        }
+        result.click();
+
+        const state = win.getServiceSlot(Number(element.dataset.uid));
+        const options = Array.isArray(serviceOptions) ? serviceOptions[index] : null;
+        if (!state || !options) return;
+
+        if (options.withDelivery !== undefined) {
+          state.withDelivery = Boolean(options.withDelivery);
+          const delivery = element.querySelector('.slot-add-delivery');
+          if (delivery) delivery.checked = state.withDelivery;
+        }
+        state.clicheExists = Boolean(options.clicheExists);
+        state.clicheW = Number(options.clicheW) || state.clicheW;
+        state.clicheH = Number(options.clicheH) || state.clicheH;
+        const clicheExists = element.querySelector('.slot-cliche-exists');
+        const clicheW = element.querySelector('.slot-cliche-w');
+        const clicheH = element.querySelector('.slot-cliche-h');
+        if (clicheExists) clicheExists.checked = state.clicheExists;
+        if (clicheW) clicheW.value = String(state.clicheW);
+        if (clicheH) clicheH.value = String(state.clicheH);
+
+        if (Array.isArray(options.dtfPoints) && options.dtfPoints.length) {
+          const pointsContainer = element.querySelector('.slot-dtf-points');
+          const addPoint = element.querySelector('.slot-add-dtf-point');
+          let pointElements = pointsContainer ? Array.from(pointsContainer.querySelectorAll('.dtf-point')) : [];
+          while (pointElements.length < options.dtfPoints.length && addPoint) {
+            addPoint.click();
+            pointElements = Array.from(pointsContainer.querySelectorAll('.dtf-point'));
+          }
+          while (pointElements.length > options.dtfPoints.length) {
+            const removePoint = pointElements[pointElements.length - 1].querySelector('.remove-dtf-point');
+            if (!removePoint) break;
+            removePoint.click();
+            pointElements = Array.from(pointsContainer.querySelectorAll('.dtf-point'));
+          }
+          state.dtfPoints = options.dtfPoints.map(function (point) {
+            return { w: Number(point.w) || 0, h: Number(point.h) || 0 };
+          });
+          pointElements.forEach(function (pointElement, pointIndex) {
+            const point = state.dtfPoints[pointIndex];
+            if (!point) return;
+            const width = pointElement.querySelector('.dtf-w');
+            const height = pointElement.querySelector('.dtf-h');
+            if (width) width.value = String(point.w);
+            if (height) height.value = String(point.h);
+          });
+        }
+      });
+      if (typeof win.calc === 'function') win.calc();
+      notify();
+      return restored;
+    }
+
+    const legacySearch = doc.getElementById('serviceSearch');
+    if (!legacySearch) return false;
 
     if (win.activeService) doc.getElementById('clearService')?.click();
     if (win.activeService2) doc.getElementById('clearService2')?.click();
@@ -396,6 +782,7 @@
     function selectService(index, name) {
       const suffix = index === 1 ? '2' : '';
       const search = doc.getElementById('serviceSearch' + suffix);
+      if (!search) return false;
       search.value = name;
       search.dispatchEvent(new win.Event('input', { bubbles: true }));
       const result = Array.from(doc.querySelectorAll('#searchResults' + suffix + ' .search-item')).find(function (item) {
@@ -442,23 +829,56 @@
     });
   }
 
-  function postPolyHistoryToGoogle(app, payload) {
+  // Скрипт Google хранит только id/дата/клиент/сумма/items, поэтому остальные поля записи прячем в items[0].__meta.
+  function encodeRecordForGoogle(record) {
+    const meta = {
+      quoteSettings: record.quoteSettings || null,
+      includeVat: record.includeVat !== false,
+      updatedAt: record.updatedAt || new Date().toISOString(),
+      historyId: record.historyId || null
+    };
+    const items = (Array.isArray(record.items) ? record.items : []).map(function (item) {
+      const copy = Object.assign({}, item);
+      delete copy.__meta;
+      return copy;
+    });
+    if (!items.length) items.push({ __placeholder: true, title: 'Пустой черновик' });
+    items[0] = Object.assign({}, items[0], { __meta: meta });
+    return Object.assign({}, record, { items: items });
+  }
+
+  function decodeGoogleRecord(record) {
+    if (!record || !Array.isArray(record.items)) return record;
+    const first = record.items[0];
+    const meta = first && first.__meta ? first.__meta : null;
+    const items = record.items.filter(function (item) { return !(item && item.__placeholder); }).map(function (item) {
+      if (!item || !item.__meta) return item;
+      const copy = Object.assign({}, item);
+      delete copy.__meta;
+      return copy;
+    });
+    const decoded = Object.assign({}, record, { items: items });
+    if (meta) {
+      if (meta.quoteSettings) decoded.quoteSettings = meta.quoteSettings;
+      decoded.includeVat = meta.includeVat !== false;
+      if (meta.updatedAt) decoded.updatedAt = meta.updatedAt;
+      if (meta.historyId) decoded.historyId = meta.historyId;
+    }
+    return decoded;
+  }
+
+  function postPolyHistoryToGoogle(app, rawPayload) {
+    const payload = encodeRecordForGoogle(rawPayload);
     const frame = frames.poly;
     const frameWin = frame && frame.contentWindow;
     if (frameWin && frameWin.__unifiedCalcSaveMessageReady && typeof frameWin.fetch === 'function') {
       frameWin.postMessage({ type: 'SAVE_TO_GOOGLE', payload: payload }, '*');
       return true;
     }
-    if (!app.googleScriptUrl || typeof window.fetch !== 'function') return false;
-    window.fetch(app.googleScriptUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'save', record: payload })
-    }).catch(function (error) {
-      console.error('Ошибка отправки КП в Google:', error);
-    });
-    return true;
+    window.dispatchEvent(new CustomEvent('history:google-save-result', {
+      detail: { success: false, id: payload.id, message: 'Не удалось подключиться к калькулятору для отправки КП в Google.' }
+    }));
+    return false;
   }
 
   function syncPolyQuote(items, companyName, includeVat) {
@@ -487,14 +907,36 @@
 
   window.LegacyBridge = {
     load: load,
+    waitForSouvenirReady: waitForSouvenirReady,
+    souvenirOriginForUrl: souvenirOriginForUrl,
     canAdd: canAdd,
+    canAddDecoration: canAddDecoration,
     add: function (moduleName) {
       if (!canAdd(moduleName)) return null;
       return moduleName === 'poly' ? addPolyItem() : addSouvenirItem();
     },
     setSouvenirQuantity: setSouvenirQuantity,
+    setSouvenirOrigin: setSouvenirOrigin,
+    calculateDecorationRuns: function (quantities) {
+      const context = souvenirContext();
+      if (!context || !Array.isArray(quantities)) return null;
+      const originalQuantity = context.quantity;
+      const calculations = [];
+      try {
+        for (const quantity of quantities) {
+          if (!Number.isFinite(Number(quantity)) || Number(quantity) <= 0 || !setSouvenirQuantity(quantity) || !canAddDecoration()) return null;
+          const calculation = addSouvenirItem();
+          if (!calculation || Number(calculation.quantity) !== Number(quantity)) return null;
+          calculations.push(calculation);
+        }
+        return calculations;
+      } finally {
+        setSouvenirQuantity(originalQuantity);
+      }
+    },
     setSouvenirCalculation: setSouvenirCalculation,
     setSouvenirServices: setSouvenirServices,
+    prepareSouvenirRun: prepareSouvenirRun,
     setDecorationViewOnly: function (enabled) {
       const frame = frames.souvenir;
       if (!frame || !frame.contentDocument) return false;
@@ -505,11 +947,11 @@
         if (!style) {
           style = doc.createElement('style');
           style.id = styleId;
-          style.textContent = 'body{margin:8px}body>:not(#main-supplier-panel):not(#second-supplier-panel){position:fixed!important;left:-10000px!important;top:0!important;visibility:hidden!important}#main-supplier-panel{margin-top:0}';
+          style.textContent = 'body{margin:8px}body>:not(#services-container):not(:has(> #btn-add-service)){position:fixed!important;left:-10000px!important;top:0!important;visibility:hidden!important}#services-container{margin-top:0}';
           doc.head.appendChild(style);
         }
         const fitFrame = function () {
-          const panels = [doc.getElementById('main-supplier-panel'), doc.getElementById('second-supplier-panel')];
+          const panels = [doc.getElementById('services-container'), doc.getElementById('btn-add-service')];
           const contentHeight = Math.max(doc.body.scrollHeight, panels.reduce(function (height, panel) {
             return Math.max(height, panel ? panel.getBoundingClientRect().bottom + 8 : 0);
           }, 0));
@@ -545,6 +987,12 @@
     getPolyManagerId: function () {
       const app = getPolyApp();
       return app && app.currentManager ? app.currentManager.id || null : null;
+    },
+    getPolySyncState: function () {
+      const app = getPolyApp();
+      if (!app) return null;
+      if (app.isSyncing) return 'syncing';
+      return app.googleScriptUrl ? 'online' : 'local';
     },
     getPolyManagers: function () {
       const app = getPolyApp();
@@ -584,7 +1032,7 @@
     },
     getPolyHistory: function () {
       const app = getPolyApp();
-      return app && Array.isArray(app.userHistory) ? app.userHistory.slice() : [];
+      return app && Array.isArray(app.userHistory) ? app.userHistory.map(decodeGoogleRecord) : [];
     },
     syncPolyQuote: syncPolyQuote,
     isPolyEditing: function () {
@@ -598,9 +1046,13 @@
       const source = orderItems[Number(app.editingIndex)];
       if (!source) return null;
 
-      const groupKey = OrderFinance.runGroupKey(source);
       const selectedSpec = app.normalizeSpecLaminations(JSON.parse(JSON.stringify(app.selected)));
-      const groupItems = orderItems.filter(function (item) { return OrderFinance.runGroupKey(item) === groupKey; });
+      if (Array.isArray(source.annotations) && source.annotations.length
+        && Number(selectedSpec.circulation) !== Number(source.quantity)) return null;
+      const sourceGroup = window.OrderFinance.runGroupKey(source);
+      const groupItems = orderItems.filter(function (item) {
+        return item.category === 'poly' && window.OrderFinance.runGroupKey(item) === sourceGroup;
+      });
       const engine = frameWindow('poly').CalcEngine;
       const calculations = [];
 
@@ -628,6 +1080,9 @@
         const annotationTotal = annotations.reduce(function (sum, annotation) { return sum + (Number(annotation.total) || 0); }, 0);
         const annotationUnitPrice = annotations.reduce(function (sum, annotation) { return sum + (Number(annotation.unitPrice) || 0); }, 0);
         const annotationCost = annotations.reduce(function (sum, annotation) { return sum + (Number(annotation.productionCost) || 0); }, 0);
+        const adjustmentCharge = (run.quoteInternalAdjustments || []).reduce(function (sum, adjustment) {
+          return sum + (Number(adjustment.chargeAmount) || 0);
+        }, 0);
         const productionCostByCategory = Object.assign({}, run.productionCostByCategory || {});
         const baseCategory = ['poly', 'souvenir', 'other'].includes(run.category) ? run.category : 'other';
         productionCostByCategory[baseCategory] = Number(calculation.result.productionCost) || 0;
@@ -651,8 +1106,8 @@
           baseUnitPrice: Number(calculation.result.one_total) || 0,
           baseTotal: Number(calculation.result.total) || 0,
           baseProductionCost: Number(calculation.result.productionCost) || 0,
-          unitPrice: (Number(calculation.result.one_total) || 0) + annotationUnitPrice,
-          total: (Number(calculation.result.total) || 0) + annotationTotal,
+          unitPrice: (Number(calculation.result.one_total) || 0) + annotationUnitPrice + adjustmentCharge / calculation.quantity,
+          total: (Number(calculation.result.total) || 0) + annotationTotal + adjustmentCharge,
           productionCostByCategory: productionCostByCategory,
           productionCost: productionCost,
           productionCostWithTax: calculation.result.productionCostWithTax,
@@ -711,7 +1166,22 @@
       }
       return false;
     },
-    savePolyHistory: function (items, companyName, recordId, includeVat, recordManagerId, total) {
+    postHistoryRecord: function (record) {
+      const app = getPolyApp();
+      if (!app || !record) return false;
+      return postPolyHistoryToGoogle(app, record);
+    },
+    fetchPolyRecords: function (managerId) {
+      const app = getPolyApp();
+      if (!app || !app.googleScriptUrl || typeof window.fetch !== 'function') return Promise.reject(new Error('offline'));
+      return window.fetch(app.googleScriptUrl + '?managerId=' + encodeURIComponent(managerId))
+        .then(function (response) { return response.json(); })
+        .then(function (result) {
+          if (!result || result.status !== 'ok' || !Array.isArray(result.data)) throw new Error('bad response');
+          return result.data.map(decodeGoogleRecord);
+        });
+    },
+    savePolyHistory: function (items, companyName, recordId, includeVat, recordManagerId, total, extra) {
       const app = getPolyApp();
       if (!app || !app.isAuthenticated || !app.currentManager || !app.currentManager.id) return null;
       const legacyId = normalizeLegacyHistoryId(recordId);
@@ -743,7 +1213,7 @@
         };
         app.userHistory.unshift(existingRecord);
       }
-      const savedRecord = Object.assign({}, existingRecord || {}, {
+      const savedRecord = Object.assign({}, existingRecord || {}, extra || {}, {
         id: legacyId,
         managerId: app.currentManager.id,
         managerName: app.currentManager.name,
@@ -763,11 +1233,16 @@
       if (typeof app.saveCurrentToHistory === 'function') {
         const prevToast = app.showNotification;
         app.showNotification = function () {};
+        // Poly отправляет запись без quoteSettings, поэтому отправляем полную запись сами.
+        const googleUrl = app.googleScriptUrl;
+        app.googleScriptUrl = '';
         try {
           app.saveCurrentToHistory();
         } finally {
           app.showNotification = prevToast;
+          app.googleScriptUrl = googleUrl;
         }
+        postPolyHistoryToGoogle(app, savedRecord);
         const idx = app.userHistory.findIndex(function (record) { return String(record.id) === String(legacyId); });
         if (idx >= 0) {
           if (app.$set) app.$set(app.userHistory, idx, savedRecord);

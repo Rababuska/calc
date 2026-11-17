@@ -32,6 +32,28 @@ test('applies order-level percent discount without touching production cost', ()
   assert.ok(Math.abs(result.margin - 470.2) < 1e-9);
 });
 
+test('uses tax-inclusive production cost for poly quote rows and totals', () => {
+  const items = [
+    {
+      id: 'poly-with-categories',
+      category: 'poly',
+      productionCost: 7150,
+      productionCostWithTax: 9724,
+      productionCostByCategory: { poly: 7150 }
+    },
+    {
+      id: 'poly-without-categories',
+      category: 'poly',
+      productionCost: 1000,
+      productionCostWithTax: 1160
+    }
+  ];
+
+  assert.equal(window.OrderFinance.itemExpenses(items[0]).poly, 9724);
+  assert.equal(window.OrderFinance.itemExpenses(items[1]).poly, 1160);
+  assert.equal(window.OrderFinance.calculate(items, true).productionCost, 10884);
+});
+
 test('shows whole-quote discounts in every row and keeps row sum equal to quote total', () => {
   const items = [
     { id: 'first', quantity: 10, unitPrice: 100, total: 1000 },
@@ -124,6 +146,21 @@ test('keeps business cards and leaflets separate when legacy run groups collide'
   assert.equal(groups[0].length, 2);
   assert.equal(groups[1].length, 1);
   assert.deepEqual(window.OrderFinance.itemsForVat(items, true, settings).map(function (item) { return item.total; }), [900, 1620, 2000]);
+});
+
+test('moves complete quote position groups without changing their runs', () => {
+  const items = [
+    { id: 'box', quantity: 1 },
+    { id: 'field-run-1', runGroupId: 'field', quantity: 10 },
+    { id: 'field-run-2', runGroupId: 'field', quantity: 20 },
+    { id: 'bag', quantity: 1 }
+  ];
+
+  const movedItems = window.OrderFinance.moveGroup(items, 'field-run-1', -1);
+
+  assert.deepEqual(movedItems.map(function (item) { return item.id; }), ['field-run-1', 'field-run-2', 'box', 'bag']);
+  assert.deepEqual(items.map(function (item) { return item.id; }), ['box', 'field-run-1', 'field-run-2', 'bag']);
+  assert.equal(window.OrderFinance.moveGroup(items, 'box', -1), null);
 });
 
 test('allows manual total override and hidden total flag', () => {
@@ -321,4 +358,29 @@ test('removeDecoration removes one selected annotation and preserves the rest', 
   assert.equal(item.annotations.length, 0);
   assert.equal(item.total, 20000);
   assert.equal(item.productionCost, 15000);
+});
+test('describes different souvenir run specifications without changing identical descriptions', () => {
+  const runs = [
+    { category: 'souvenir', quantity: 100, details: 'УФ-печать' },
+    { category: 'souvenir', quantity: 200, details: 'Гравировка' }
+  ];
+  assert.equal(window.OrderFinance.describeRunDetails(runs), 'Тираж 1 (100 шт.): УФ-печать\nТираж 2 (200 шт.): Гравировка');
+  runs[1].details = runs[0].details;
+  assert.equal(window.OrderFinance.describeRunDetails(runs), 'УФ-печать');
+  runs[0].category = 'poly';
+  runs[1].category = 'poly';
+  runs[1].details = 'Тиснение';
+  assert.equal(window.OrderFinance.describeRunDetails(runs), 'Тираж 1 (100 шт.): УФ-печать\nТираж 2 (200 шт.): Тиснение');
+});
+
+test('does not count a calculated embossing annotation twice on a poly run', () => {
+  const item = {
+    category: 'poly', quantity: 200, title: 'Визитки',
+    baseDetails: 'Визитки', details: 'Визитки\nТиснение',
+    productionCost: 54000, productionCostByCategory: { poly: 5000, souvenir: 49000 },
+    annotations: [{ details: 'Тиснение', productionCost: 49000 }]
+  };
+  assert.equal(window.OrderFinance.itemExpenses(item).total, 54000);
+  item.productionCostWithTax = 5800;
+  assert.equal(window.OrderFinance.itemExpenses(item).total, 54800);
 });

@@ -15,6 +15,14 @@
   let pendingDecorationEditIndex = null;
   let pendingStockDecorationEdit = false;
   let pendingDecorationRestoreUnavailable = false;
+  let pendingSouvenirRunId = null;
+  let pendingSouvenirRunEditing = false;
+  let souvenirRunRestoring = false;
+  let souvenirRunRestoreUnavailable = false;
+  let souvenirRunLoadFailed = false;
+  let polyRunCalculating = false;
+  let failedModule = null;
+  let decorationRestoreGeneration = 0;
   let overtimeTargetGroupId = '';
   let cashbackTargetGroupId = '';
   let overtimeEditingAdjustmentId = '';
@@ -498,10 +506,13 @@
 
   function setActiveModule(moduleName) {
     activeModule = moduleName;
+    failedModule = null;
     document.getElementById('module-poly').classList.toggle('hidden', moduleName !== 'poly');
     document.getElementById('module-souvenir').classList.toggle('hidden', moduleName !== 'souvenir');
     updateCalculationStatus();
     return LegacyBridge.load(moduleName).then(function () {
+      return moduleName === 'souvenir' ? LegacyBridge.waitForSouvenirReady() : undefined;
+    }).then(function () {
       if (moduleName === 'souvenir' && pendingDecorationItemId) {
         const item = OrderState.getItems().find(function (entry) { return String(entry.id) === String(pendingDecorationItemId); });
         if (item) {
@@ -511,15 +522,29 @@
         }
       }
       updateCalculationStatus();
-    }).catch(function () {
-      document.getElementById('calc-status').textContent = 'Не удалось загрузить калькулятор';
+      return true;
+    }).catch(function (error) {
+      console.error('Не удалось загрузить калькулятор:', error);
+      if (activeModule === moduleName) {
+        failedModule = moduleName;
+        updateCalculationStatus();
+      }
+      return false;
     });
+  }
+
+  function moveCalculator(parent, element, before) {
+    if (typeof parent.moveBefore === 'function' && parent.isConnected && element.isConnected) {
+      parent.moveBefore(element, before || null);
+    } else {
+      parent.insertBefore(element, before || null);
+    }
   }
 
   function openDecorationDialog(fullCalculator) {
     decorationDialog.classList.toggle('decoration-dialog-full', Boolean(fullCalculator));
     document.getElementById('decoration-dialog-title').textContent = pendingDecorationEditIndex === null ? 'Добавление нанесения' : 'Изменение нанесения';
-    decorationCalculatorSlot.appendChild(souvenirModule);
+    moveCalculator(decorationCalculatorSlot, souvenirModule);
     decorationActionsSlot.appendChild(calcActions);
     if (!decorationDialog.open) decorationDialog.showModal();
   }
@@ -534,11 +559,7 @@
   function normalizeSouvenirProductUrl(value) {
     try {
       const url = new URL(String(value || '').trim());
-      const allowedHosts = ['happygifts.ru', 'artegifts.by', 'oasiscatalog.com', 'gifts.ru', 'portobello.ru', 'ucontay.kz'];
-      const isAllowedHost = allowedHosts.some(function (host) {
-        return url.hostname === host || url.hostname.endsWith('.' + host);
-      });
-      return url.protocol === 'https:' && isAllowedHost ? url.href : '';
+      return LegacyBridge.souvenirOriginForUrl(url.href) ? url.href : '';
     } catch (error) {
       return '';
     }
@@ -581,29 +602,81 @@
     return typeof value === 'string' ? value : '';
   }
 
-  function getSouvenirProductImageUrl(doc, pageUrl, productName, productSchema) {
+function getSouvenirProductImageUrl(doc, pageUrl, productName, productSchema) {
     const structuredImage = productImageValue(productSchema && productSchema.image);
-    const metaImage = doc.querySelector('meta[property="og:image"]')?.content
-      || doc.querySelector('meta[name="twitter:image"]')?.content
+    
+    // Считывание ссылки из тега link itemprop="image" (основной формат Happy Gifts)
+    const itempropImage = doc.querySelector('link[itemprop="image"]')?.getAttribute('href')
+      || doc.querySelector('[itemprop="image"]')?.getAttribute('href')
+      || doc.querySelector('[itemprop="image"]')?.getAttribute('content')
+      || doc.querySelector('[itemprop="image"]')?.getAttribute('src')
       || '';
+
+    const metaImage = doc.querySelector('meta[property="og:image"]')?.content
+      || doc.querySelector('meta[property="og:image:secure_url"]')?.content
+      || doc.querySelector('meta[name="twitter:image"]')?.content
+      || doc.querySelector('link[rel="image_src"]')?.getAttribute('href')
+      || '';
+
+    // Прямой захват ссылок на папку /catalog-images/ (Happy Gifts)
+    const catalogImages = Array.from(doc.querySelectorAll('link[href*="catalog-images"], a[href*="catalog-images"], img[src*="catalog-images"], img[data-src*="catalog-images"]')).map(function (el) {
+      return el.getAttribute('href') || el.getAttribute('data-src') || el.getAttribute('src') || '';
+    }).filter(Boolean);
+
+    function extractImg(img) {
+      if (!img) return '';
+      const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+      if (srcset) {
+        const first = srcset.split(',')[0].trim().split(/\s+/)[0];
+        if (first) return first;
+      }
+      return img.getAttribute('data-src')
+        || img.getAttribute('data-original')
+        || img.getAttribute('data-lazy')
+        || img.getAttribute('data-zoom-image')
+        || img.getAttribute('src')
+        || '';
+    }
+
     const normalizedName = String(productName || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const matchingImages = Array.from(doc.images).filter(function (image) {
       const alt = String(image.alt || '').replace(/\s+/g, ' ').trim().toLowerCase();
       return alt && (alt === normalizedName || normalizedName.includes(alt) || alt.includes(normalizedName));
-    }).map(function (image) {
-      return image.getAttribute('data-src') || image.getAttribute('data-original') || image.getAttribute('srcset')?.split(',')[0].trim().split(/\s+/)[0] || image.getAttribute('src') || '';
+    }).map(extractImg).filter(Boolean);
+
+    const articleCode = pageUrl.match(/articul[_-]([a-zA-Z0-9_-]+)/i)?.[1]
+      || pageUrl.match(/\/item\/([0-9-]+)/i)?.[1]
+      || pageUrl.match(/id\/(\d+)/i)?.[1];
+    const articleImages = articleCode ? Array.from(doc.images).map(extractImg).filter(function (source) {
+      return source && source.includes(articleCode);
+    }) : [];
+
+    const uploadImages = Array.from(doc.images).map(extractImg).filter(function (src) {
+      return /(?:\/upload\/|\/images\/products\/|oasiscatalog\.com\/.*\/images\/)/i.test(src);
     });
-    const articleCode = pageUrl.match(/articul[_-](\d+)/i)?.[1];
-    const articleImages = articleCode ? Array.from(doc.images).map(function (image) {
-      return image.getAttribute('data-src') || image.getAttribute('data-original') || image.getAttribute('srcset')?.split(',')[0].trim().split(/\s+/)[0] || image.getAttribute('src') || '';
-    }).filter(function (source) { return source && source.includes(articleCode); }) : [];
-    const candidates = [structuredImage, metaImage].concat(matchingImages, articleImages);
+
+    const candidates = [
+      structuredImage,
+      itempropImage,
+      metaImage,
+      ...catalogImages,
+      ...matchingImages,
+      ...articleImages,
+      ...uploadImages
+    ];
+
     for (let index = 0; index < candidates.length; index++) {
-      const candidate = String(candidates[index] || '').trim();
+      let candidate = String(candidates[index] || '').trim();
       if (!candidate || candidate.startsWith('data:image/gif')) continue;
+      if (/(?:logo|icon|favicon|sprite|payment|avatar|banner|blank|pixel|loader|preloader|\.svg|1x1)/i.test(candidate)) continue;
+
+      if (candidate.startsWith('//')) candidate = 'https:' + candidate;
       try {
         const imageUrl = new URL(candidate, pageUrl);
-        if (imageUrl.protocol === 'https:' && !/\.svg(?:$|\?)/i.test(imageUrl.pathname)) return imageUrl.href;
+        if (imageUrl.protocol === 'http:') imageUrl.protocol = 'https:';
+        if (imageUrl.protocol === 'https:' && !/\.svg(?:$|\?)/i.test(imageUrl.pathname)) {
+          return imageUrl.href;
+        }
       } catch (error) {
         continue;
       }
@@ -611,22 +684,17 @@
     return '';
   }
 
-  async function fetchSouvenirResource(url, errorMessage) {
-    let directFailure = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await fetch(url, { credentials: 'omit' });
-        if (response.ok) return response;
-        directFailure = new Error('HTTP ' + response.status);
-      } catch (error) {
-        directFailure = error;
-      }
-      if (attempt === 0) await new Promise(function (resolve) { window.setTimeout(resolve, 300); });
-    }
-
+async function fetchSouvenirResource(url, errorMessage) {
+    const proxyUrl = 'https://gifts-proxy.subilmur.workers.dev/?url=' + encodeURIComponent(url);
     try {
-      const proxyUrl = 'http://127.0.0.1:8767/proxy?url=' + encodeURIComponent(url);
-      const response = await fetch(proxyUrl, { credentials: 'omit' });
+      const controller = new AbortController();
+      const timer = setTimeout(function () { controller.abort(); }, 15000);
+      let response;
+      try {
+        response = await fetch(proxyUrl, { credentials: 'omit', signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (response.ok) return response;
       let proxyMessage = '';
       try {
@@ -635,25 +703,56 @@
       } catch (error) {
         proxyMessage = '';
       }
-      throw new Error(proxyMessage || 'Локальный мост вернул HTTP ' + response.status);
+      throw new Error(proxyMessage || 'Шлюз вернул HTTP ' + response.status);
     } catch (proxyError) {
-      if (proxyError && proxyError.message && proxyError.message.includes('Локальный мост')) {
-        throw new Error(errorMessage + ' ' + proxyError.message + '. Запустите souvenir-import-proxy.ps1.');
-      }
-      throw new Error(errorMessage + ' Локальный мост импорта не запущен; выполните souvenir-import-proxy.ps1.');
+      throw new Error(errorMessage + (proxyError && proxyError.message ? ' (' + proxyError.message + ')' : ''));
     }
   }
 
+  // Каталоги не отдают страницы серверам Cloudflare, поэтому параллельно с воркером запрашиваем страницу через Jina Reader прямо из браузера.
+  async function fetchSouvenirPageHtml(pageUrl) {
+    const attempts = [
+      fetchSouvenirResource(pageUrl, 'Не удалось получить страницу товара из браузера.').then(function (response) {
+        if (!response.ok) throw new Error('Каталог не ответил: ' + response.status);
+        return response.text();
+      }),
+      (async function () {
+        const controller = new AbortController();
+        const timer = setTimeout(function () { controller.abort(); }, 20000);
+        try {
+          const response = await fetch('https://r.jina.ai/' + pageUrl, {
+            headers: { 'X-Respond-With': 'html' },
+            credentials: 'omit',
+            signal: controller.signal
+          });
+          if (!response.ok) throw new Error('Jina: HTTP ' + response.status);
+          return await response.text();
+        } finally {
+          clearTimeout(timer);
+        }
+      })()
+    ];
+    const valid = attempts.map(function (attempt) {
+      return attempt.then(function (html) {
+        if (typeof html !== 'string' || html.length < 2000 || !/<html|<!doctype/i.test(html)) throw new Error('Пустой ответ каталога');
+        return html;
+      });
+    });
+    return new Promise(function (resolve, reject) {
+      const errors = [];
+      valid.forEach(function (attempt) {
+        attempt.then(resolve, function (error) {
+          errors.push(error && error.message ? error.message : String(error));
+          if (errors.length === valid.length) reject(new Error('Не удалось получить страницу товара (' + errors.join('; ') + ')'));
+        });
+      });
+    });
+  }
   async function importSouvenirProductFromUrl(rawUrl) {
     const pageUrl = normalizeSouvenirProductUrl(rawUrl);
     if (!pageUrl) throw new Error('Вставьте HTTPS-ссылку из поддерживаемого каталога');
-    const pageResponse = await fetchSouvenirResource(pageUrl, 'Не удалось получить страницу товара из браузера (ограничение CORS или сети). Проверьте полный адрес или выберите ручной ввод.');
-    if (!pageResponse.ok) throw new Error('Каталог не ответил: ' + pageResponse.status);
-    const responseUrl = new URL(pageResponse.url || pageUrl);
-    const isLocalProxyResponse = responseUrl.hostname === '127.0.0.1' && responseUrl.port === '8767';
-    const finalUrl = normalizeSouvenirProductUrl(isLocalProxyResponse ? pageUrl : responseUrl.href);
-    if (!finalUrl) throw new Error('Ссылка перенаправила на неподдерживаемый сайт');
-    const html = await pageResponse.text();
+    const finalUrl = pageUrl;
+    const html = await fetchSouvenirPageHtml(pageUrl);
     const doc = new DOMParser().parseFromString(html, 'text/html');
     let productSchema = null;
     Array.from(doc.querySelectorAll('script[type="application/ld+json"]')).some(function (script) {
@@ -669,42 +768,99 @@
     const title = String(productSchema && productSchema.name || heading || socialTitle).replace(/\s+/g, ' ').trim();
     const fullTitle = String(heading || productSchema && productSchema.name || socialTitle || title).replace(/\s+/g, ' ').trim();
     if (!title) throw new Error('Не удалось найти название товара на странице');
-    const imageUrl = getSouvenirProductImageUrl(doc, finalUrl, title, productSchema);
-    if (!imageUrl) throw new Error('На странице не нашлась главная фотография товара');
-    const imageResponse = await fetchSouvenirResource(imageUrl, 'Карточка товара открылась, но сайт не разрешил загрузить фото. Попробуйте другую ссылку или ручной ввод.');
-    if (!imageResponse.ok) throw new Error('Не удалось загрузить фотографию товара');
-    const imageBlob = await imageResponse.blob();
-    if (!imageBlob.type.startsWith('image/')) throw new Error('Ссылка товара вернула не изображение');
-    const bitmap = await createImageBitmap(imageBlob);
-    const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const photo = canvas.toDataURL('image/jpeg', 0.84);
+
+    const imageUrl = getSouvenirProductImageUrl(doc, finalUrl, title, productSchema, html);
+    let photo = null;
+
+    if (imageUrl) {
+      try {
+        const imageResponse = await fetchSouvenirResource(imageUrl, 'Не удалось загрузить фото');
+        if (imageResponse && imageResponse.ok) {
+          const imageBlob = await imageResponse.blob();
+          if (imageBlob.type.startsWith('image/')) {
+            const bitmap = await createImageBitmap(imageBlob);
+            const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+            canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+            canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            bitmap.close();
+            photo = await compressPhoto(canvas.toDataURL('image/jpeg', 0.84));
+          }
+        }
+      } catch (e) {
+        photo = null;
+      }
+    }
+    if (!photo) console.warn('Фото товара не загружено:', imageUrl || 'ссылка на фото не найдена');
+
     return { title: title, fullTitle: fullTitle, photo: photo, sourceUrl: finalUrl };
   }
 
   function closeProductCalculatorDialog() {
+    decorationRestoreGeneration += 1;
+    if (pendingSouvenirRunId) {
+      pendingSouvenirRunId = null;
+      pendingSouvenirRunEditing = false;
+      souvenirRunRestoring = false;
+      souvenirRunRestoreUnavailable = false;
+      souvenirRunLoadFailed = false;
+    }
+    kpBody.querySelectorAll('[data-action-handled]').forEach(function (button) { delete button.dataset.actionHandled; });
     if (productCalculatorDialog.open) productCalculatorDialog.close();
     calcContainer.classList.add('hidden');
+    updateCalculationStatus();
   }
 
   function closeDecorationDialog() {
+    decorationRestoreGeneration += 1;
+    polyRunCalculating = false;
     if (decorationDialog.open) decorationDialog.close();
     LegacyBridge.setDecorationViewOnly(false);
     calcContainer.appendChild(calcActions);
-    calcContainer.insertBefore(souvenirModule, calcActions);
+    moveCalculator(calcContainer, souvenirModule, calcActions);
     pendingDecorationItemId = null;
     pendingDecorationEditIndex = null;
     pendingStockDecorationEdit = false;
     pendingDecorationRestoreUnavailable = false;
+    pendingSouvenirRunId = null;
+    pendingSouvenirRunEditing = false;
+    souvenirRunRestoring = false;
+    souvenirRunRestoreUnavailable = false;
+    souvenirRunLoadFailed = false;
+    kpBody.querySelectorAll('[data-action-handled]').forEach(function (button) { delete button.dataset.actionHandled; });
     document.getElementById('decoration-dialog-title').textContent = 'Добавление нанесения';
     return setActiveModule('poly');
   }
 
   function updateCalculationStatus() {
+    if (polyRunCalculating) {
+      addToKpButton.disabled = true;
+      document.getElementById('calc-status').textContent = 'Пересчитываю тираж…';
+      return;
+    }
+    if (failedModule === activeModule) {
+      addToKpButton.disabled = true;
+      document.getElementById('calc-status').textContent = 'Не удалось загрузить калькулятор. Закройте окно и откройте его снова; проверьте подключение к интернету.';
+      return;
+    }
+    if (pendingSouvenirRunId) {
+      const ready = activeModule === 'souvenir' && !souvenirRunRestoring && !souvenirRunLoadFailed && LegacyBridge.canAdd('souvenir');
+      addToKpButton.disabled = !ready;
+      addToKpButton.textContent = pendingSouvenirRunEditing ? 'Сохранить изменения' : 'Добавить тираж в КП';
+      const cancelButton = document.getElementById('btn-cancel-decoration');
+      cancelButton.classList.remove('hidden');
+      cancelButton.textContent = 'Отменить';
+      document.getElementById('calc-status').textContent = souvenirRunLoadFailed
+        ? 'Не удалось загрузить сувенирный калькулятор. Закройте окно и попробуйте снова.'
+        : souvenirRunRestoring
+        ? 'Восстанавливаю предыдущий расчёт…'
+        : (souvenirRunRestoreUnavailable
+          ? 'Не все параметры предыдущего расчёта сохранились. Проверьте и заполните данные перед добавлением тиража.'
+          : (pendingSouvenirRunEditing ? 'Проверьте расчёт выбранного тиража.' : 'Проверьте количество и расходы для нового тиража.'));
+      return;
+    }
+    document.getElementById('btn-cancel-decoration').textContent = 'Отменить нанесение';
     const pendingItem = OrderState.getItems().find(function (item) { return String(item.id) === String(pendingDecorationItemId); });
     if (!pendingItem) {
       pendingDecorationItemId = null;
@@ -715,17 +871,19 @@
     const annotations = pendingItem && Array.isArray(pendingItem.annotations) ? pendingItem.annotations : [];
     const editingAnnotation = pendingDecorationEditIndex !== null ? annotations[pendingDecorationEditIndex] : null;
     const previousDecoration = editingAnnotation
-      ? ((editingAnnotation.services || []).join(' + ') || plainText(editingAnnotation.details || editingAnnotation.annotationText) || 'без описания')
+      ? ((editingAnnotation.services || []).join(' + ') || plainText(editingAnnotation.details || editingAnnotation.annotationText) || 'описание не сохранено')
       : '';
     const editingPoly = !decorationMode && activeModule === 'poly' && LegacyBridge.isPolyEditing();
     const ready = decorationMode
-      ? activeModule === 'souvenir' && LegacyBridge.canAdd('souvenir')
+      ? activeModule === 'souvenir' && LegacyBridge.canAddDecoration()
       : LegacyBridge.canAdd(activeModule);
     const canKeepExistingDecoration = Boolean(editingAnnotation && pendingDecorationRestoreUnavailable && !ready);
     addToKpButton.disabled = (!ready && !canKeepExistingDecoration) || (editingStockDecoration && pendingDecorationRestoreUnavailable);
     addToKpButton.textContent = decorationMode
       ? (activeModule === 'souvenir'
-        ? (canKeepExistingDecoration ? 'Оставить без изменений' : (editingAnnotation || editingStockDecoration ? 'Сохранить изменения' : (pendingItem.category === 'souvenir' ? 'Добавить в КП' : 'Добавить нанесение в позицию')))
+        ? (canKeepExistingDecoration
+          ? 'Оставить без изменений'
+          : (editingAnnotation || editingStockDecoration ? 'Сохранить изменения' : (pendingItem.category === 'souvenir' ? 'Добавить в КП' : 'Добавить нанесение в позицию')))
         : 'Продолжить расчет нанесения')
       : (editingPoly ? 'Сохранить изменения' : '+ Добавить в КП');
     document.getElementById('btn-cancel-decoration').classList.toggle('hidden', !decorationMode);
@@ -736,9 +894,9 @@
           : (ready ? 'Нанесение рассчитано. Сохраните изменения.' : 'Выберите услугу и выполните расчет нанесения'))
         : (editingAnnotation
         ? (ready ? (pendingDecorationRestoreUnavailable
-          ? 'Сумма пересчитана. Исходные цена и курс не сохранены; проверьте цену и курс перед сохранением. Было: ' + previousDecoration
+          ? 'Исходные параметры нанесения отсутствовали. Новый расчет готов и заменит старую запись; проверьте цену, расходы и услугу перед сохранением. Было: ' + previousDecoration
           : 'Новое нанесение рассчитано. Было: ' + previousDecoration) : (canKeepExistingDecoration
-          ? 'Исходные цена и курс не сохранены. Тираж восстановлен, валюта ₽ выбрана; введите цену и проверьте курс или оставьте нанесение без изменений: ' + previousDecoration
+          ? 'Не удалось восстановить исходное нанесение. Оставьте его без изменений или удалите и добавьте заново: ' + previousDecoration
           : 'Измените нанесение: ' + previousDecoration))
         : (ready ? 'Расчет готов для: ' + pendingItem.title : 'Выберите услугу и выполните расчет нанесения')))
       : (editingPoly
@@ -767,9 +925,17 @@
     return cell;
   }
 
-  function addDetailsCell(row, item) {
+  function addDetailsCell(row, item, runItems) {
     const cell = document.createElement('td');
     cell.className = 'quote-description';
+    const combinedDetails = OrderFinance.describeRunDetails(runItems);
+    const differingRuns = runItems.length > 1
+      && combinedDetails !== plainText(item.details).replace(/&nbsp;/gi, ' ');
+    if (differingRuns) {
+      const firstLabel = document.createElement('div');
+      firstLabel.textContent = 'Тираж 1 (' + item.quantity + ' шт.):';
+      cell.appendChild(firstLabel);
+    }
     const annotations = Array.isArray(item.annotations) ? item.annotations : [];
     let baseDetails = item.baseDetails !== undefined ? plainText(item.baseDetails) : plainText(item.details);
     if (item.baseDetails === undefined) {
@@ -779,12 +945,19 @@
       });
     }
 
-    const editableDetails = document.createElement('span');
+const editableDetails = document.createElement('span');
     editableDetails.className = 'quote-editable';
     editableDetails.contentEditable = 'true';
     editableDetails.dataset.editId = item.id;
     editableDetails.dataset.editField = 'details';
+    editableDetails.dataset.placeholder = 'Данные (характеристики)';
     editableDetails.textContent = baseDetails;
+    editableDetails.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        editableDetails.blur();
+      }
+    });
     cell.appendChild(editableDetails);
 
     annotations.forEach(function (annotation, annotationIndex) {
@@ -796,41 +969,24 @@
       annotationText.textContent = visibleAnnotationText;
       if (visibleAnnotationText) annotationLine.appendChild(annotationText);
 
-      const editLabel = annotations.length > 1 ? 'Изменить нанесение ' + (annotationIndex + 1) : 'Изменить нанесение';
-      const editButton = createQuoteActionButton(editLabel, '<path d="m16 4 4 4L8 20H4v-4L16 4z"/><path d="m14 6 4 4"/>');
-      editButton.dataset.editDecorationId = item.id;
-      editButton.dataset.annotationIndex = String(annotationIndex);
-      editButton.title = visibleAnnotationText ? editLabel + ': ' + visibleAnnotationText : editLabel;
-      editButton.setAttribute('aria-label', editButton.title);
-      annotationLine.appendChild(editButton);
-
-      const removeButton = createQuoteActionButton('Убрать нанесение ' + (annotationIndex + 1), '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
-      removeButton.dataset.removeAnnotationId = item.id;
-      removeButton.dataset.annotationIndex = String(annotationIndex);
-      annotationLine.appendChild(removeButton);
       cell.appendChild(annotationLine);
     });
 
-    const directStockServices = !annotations.length && item.souvenirMode === 'sklad' && Array.isArray(item.services) ? item.services : [];
-    if (directStockServices.length) {
-      const annotationLine = document.createElement('div');
-      annotationLine.className = 'quote-annotation-line';
-      const editButton = createQuoteActionButton('Изменить нанесение', '<path d="m16 4 4 4L8 20H4v-4L16 4z"/><path d="m14 6 4 4"/>');
-      editButton.dataset.editStockDecorationId = item.id;
-      annotationLine.appendChild(editButton);
-      const removeButton = createQuoteActionButton('Убрать нанесение', '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
-      removeButton.dataset.removeStockDecorationId = item.id;
-      annotationLine.appendChild(removeButton);
-      cell.appendChild(annotationLine);
+    if (differingRuns) {
+      runItems.slice(1).forEach(function (run, index) {
+        const details = document.createElement('div');
+        details.textContent = 'Тираж ' + (index + 2) + ' (' + run.quantity + ' шт.): ' + (plainText(run.details) || '—');
+        cell.appendChild(details);
+      });
     }
-
     row.appendChild(cell);
+    return cell;
   }
 
-  function addRunValues(row, runItems, field, getValue, className) {
+  function addValuesCell(row, items, field, getValue, className) {
     const cell = document.createElement('td');
     if (className) cell.className = className;
-    runItems.forEach(function (item) {
+    items.forEach(function (item) {
       const value = document.createElement('div');
       value.className = 'quote-run-value quote-editable';
       value.contentEditable = 'true';
@@ -841,6 +997,39 @@
     });
     row.appendChild(cell);
     return cell;
+  }
+
+  function addPolyDecorationControls(addControls, runItems, item) {
+      const decoratedRun = runItems.find(function (run) { return Array.isArray(run.annotations) && run.annotations.length; });
+      const annotations = decoratedRun ? decoratedRun.annotations : [];
+      const decorationButton = createQuoteActionButton(annotations.length ? 'Изменить нанесение для всех тиражей' : 'Добавить нанесение для всех тиражей', '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/><path d="m19 14 1.2 3.2L23 18l-2.8.8L19 22l-1.2-3.2L15 18l2.8-.8L19 14z"/>', 'add-decoration');
+      if (decoratedRun) {
+        decorationButton.dataset.editDecorationId = decoratedRun.id;
+        decorationButton.dataset.annotationIndex = '0';
+        const removeDecoration = createQuoteActionButton('Убрать нанесение со всех тиражей', '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
+        removeDecoration.dataset.removeDecorationGroupId = decoratedRun.id;
+        removeDecoration.dataset.annotationIndex = '0';
+        if (annotations.length > 1) {
+          const selector = document.createElement('select');
+          selector.setAttribute('aria-label', 'Нанесение позиции');
+          annotations.forEach(function (annotation, index) {
+            const option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = (annotation.services || []).join(' + ') || 'Нанесение ' + (index + 1);
+            selector.appendChild(option);
+          });
+          selector.addEventListener('change', function () {
+            decorationButton.dataset.annotationIndex = selector.value;
+            removeDecoration.dataset.annotationIndex = selector.value;
+          });
+          addControls.appendChild(selector);
+        }
+        addControls.appendChild(decorationButton);
+        addControls.appendChild(removeDecoration);
+      } else {
+        decorationButton.dataset.calcDecorationId = item.id;
+        addControls.appendChild(decorationButton);
+      }
   }
 
   function addQuantityCell(row, runItems, item) {
@@ -882,6 +1071,185 @@
     title.dataset.editId = item.id;
     title.dataset.editField = 'title';
     title.textContent = item.title;
+    title.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        title.blur();
+      }
+    });
+    cell.addEventListener('click', function (event) {
+      if (event.target === cell) title.focus();
+    });
+    cell.appendChild(title);
+
+    annotations.forEach(function (annotation, annotationIndex) {
+      const annotationLine = document.createElement('div');
+      annotationLine.className = 'quote-annotation-line';
+      const annotationText = document.createElement('span');
+      annotationText.className = 'quote-annotation-text';
+      const visibleAnnotationText = plainText(annotation.annotationText || annotation.details);
+      annotationText.textContent = visibleAnnotationText;
+      if (visibleAnnotationText) annotationLine.appendChild(annotationText);
+
+      const editLabel = annotations.length > 1 ? 'Изменить нанесение ' + (annotationIndex + 1) : 'Изменить нанесение';
+      const editButton = createQuoteActionButton(editLabel, '<path d="m16 4 4 4L8 20H4v-4L16 4z"/><path d="m14 6 4 4"/>');
+      editButton.dataset.editDecorationId = item.id;
+      editButton.dataset.annotationIndex = String(annotationIndex);
+      editButton.title = visibleAnnotationText ? editLabel + ': ' + visibleAnnotationText : editLabel;
+      editButton.setAttribute('aria-label', editButton.title);
+      annotationLine.appendChild(editButton);
+
+      const removeButton = createQuoteActionButton('Убрать нанесение ' + (annotationIndex + 1), '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
+      removeButton.dataset.removeAnnotationId = item.id;
+      removeButton.dataset.annotationIndex = String(annotationIndex);
+      annotationLine.appendChild(removeButton);
+      cell.appendChild(annotationLine);
+    });
+
+    const directStockServices = !annotations.length && item.souvenirMode === 'sklad' && Array.isArray(item.services) ? item.services : [];
+    if (directStockServices.length) {
+      const annotationLine = document.createElement('div');
+      annotationLine.className = 'quote-annotation-line';
+      const editButton = createQuoteActionButton('Изменить нанесение', '<path d="m16 4 4 4L8 20H4v-4L16 4z"/><path d="m14 6 4 4"/>');
+      editButton.dataset.editStockDecorationId = item.id;
+      annotationLine.appendChild(editButton);
+      const removeButton = createQuoteActionButton('Убрать нанесение', '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
+      removeButton.dataset.removeStockDecorationId = item.id;
+      annotationLine.appendChild(removeButton);
+      cell.appendChild(annotationLine);
+    }
+
+    row.appendChild(cell);
+  }
+
+  function addCostCell(row, runItems) {
+    const cell = document.createElement('td');
+    cell.className = 'quote-cost-cell';
+    runItems.forEach(function (run) {
+      const value = document.createElement('div');
+      value.className = 'quote-run-value';
+      value.textContent = OrderFinance.formatAmount(OrderFinance.itemExpenses(run).total).replace(/\s/g, '');
+      if (run.category === 'other') {
+        value.classList.add('quote-editable');
+        value.contentEditable = 'true';
+        value.dataset.editId = run.id;
+        value.dataset.editField = 'productionCost';
+        value.dataset.placeholder = '0';
+        value.title = 'Себестоимость вводится вручную';
+      } else {
+        value.title = 'Считается автоматически по калькулятору';
+      }
+      cell.appendChild(value);
+    });
+    row.appendChild(cell);
+    return cell;
+  }
+
+function addRunValues(row, runItems, field, getValue, className) {
+    const cell = document.createElement('td');
+    if (className) cell.className = className;
+    runItems.forEach(function (item) {
+      const value = document.createElement('div');
+      value.className = 'quote-run-value quote-editable';
+      value.contentEditable = 'true';
+      value.dataset.editId = item.id;
+      value.dataset.editField = field;
+      value.textContent = getValue(item);
+      cell.appendChild(value);
+    });
+    row.appendChild(cell);
+    return cell;
+  }
+
+  function addQuantityCell(row, runItems, item) {
+    const cell = document.createElement('td');
+    cell.className = 'quote-quantity-cell';
+    const addControls = createDuplicateRunControls(item);
+    addControls.classList.add('quote-quantity-tools');
+    if (item.category === 'poly') addPolyDecorationControls(addControls, runItems, item);
+    cell.appendChild(addControls);
+    runItems.forEach(function (run, runIndex) {
+      const quantityRow = document.createElement('div');
+      quantityRow.className = 'quote-quantity-run';
+      const value = document.createElement('div');
+      value.className = 'quote-run-value quote-editable';
+      value.contentEditable = 'true';
+      value.dataset.editId = run.id;
+      value.dataset.editField = 'quantity';
+      value.setAttribute('aria-label', 'Количество тиража ' + (runIndex + 1));
+      value.textContent = String(run.quantity);
+      quantityRow.appendChild(value);
+      if (run.category === 'poly' || run.category === 'souvenir') {
+        const editPosition = createQuoteActionButton(run.category === 'poly' ? 'Изменить общую спецификацию, тираж ' + (runIndex + 1) : 'Изменить позицию, тираж ' + (runIndex + 1), '<path d="m16 3 5 5-12 12H4v-5L16 3z"/><path d="m14 5 5 5"/>');
+        editPosition.dataset.editItemId = run.id;
+        quantityRow.appendChild(editPosition);
+      }
+      if (run.category !== 'poly' && run.category !== 'souvenir') {
+      const annotations = Array.isArray(run.annotations) ? run.annotations : [];
+      const directServices = Array.isArray(run.services) && run.services.length > 0;
+      const editDecoration = createQuoteActionButton((annotations.length || directServices ? 'Изменить' : 'Добавить') + ' нанесение, тираж ' + (runIndex + 1), '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/><path d="m19 14 1.2 3.2L23 18l-2.8.8L19 22l-1.2-3.2L15 18l2.8-.8L19 14z"/>', 'add-decoration');
+      if (annotations.length) {
+        editDecoration.dataset.editDecorationId = run.id;
+        editDecoration.dataset.annotationIndex = '0';
+        if (annotations.length > 1) {
+          const selector = document.createElement('select');
+          selector.setAttribute('aria-label', 'Нанесение тиража ' + (runIndex + 1));
+          annotations.forEach(function (annotation, index) {
+            const option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = (annotation.services || []).join(' + ') || 'Нанесение ' + (index + 1);
+            selector.appendChild(option);
+          });
+          selector.addEventListener('change', function () { editDecoration.dataset.annotationIndex = selector.value; });
+          quantityRow.appendChild(selector);
+        }
+      } else if (run.category === 'souvenir' && directServices) {
+        editDecoration.dataset.editStockDecorationId = run.id;
+      } else {
+        editDecoration.dataset.calcDecorationId = run.id;
+      }
+      quantityRow.appendChild(editDecoration);
+      if (annotations.length || (run.category === 'souvenir' && directServices)) {
+        const removeDecoration = createQuoteActionButton('Убрать нанесение, тираж ' + (runIndex + 1), '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
+        if (annotations.length) {
+          removeDecoration.dataset.removeAnnotationId = run.id;
+          removeDecoration.dataset.annotationIndex = '0';
+          const selector = quantityRow.querySelector('select');
+          if (selector) selector.addEventListener('change', function () { removeDecoration.dataset.annotationIndex = selector.value; });
+        } else {
+          removeDecoration.dataset.removeStockDecorationId = run.id;
+        }
+        quantityRow.appendChild(removeDecoration);
+      }
+      }
+      if (runIndex > 0) {
+        const removeButton = createQuoteActionButton('Удалить тираж ' + (runIndex + 1), '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 5v5m4-5v5"/>', 'remove-action');
+        removeButton.dataset.removeId = run.id;
+        quantityRow.appendChild(removeButton);
+      }
+      cell.appendChild(quantityRow);
+    });
+    row.appendChild(cell);
+    return cell;
+  }
+
+  function addTitleCell(row, item) {
+    const cell = document.createElement('td');
+    cell.className = 'quote-title';
+    cell.tabIndex = 0;
+    cell.setAttribute('aria-label', 'Название позиции и область вставки фото');
+    const title = document.createElement('span');
+    title.className = 'quote-title-text quote-editable';
+    title.contentEditable = 'true';
+    title.dataset.editId = item.id;
+    title.dataset.editField = 'title';
+    title.textContent = item.title;
+    title.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        title.blur();
+      }
+    });
     cell.addEventListener('click', function (event) {
       if (event.target === cell) title.focus();
     });
@@ -934,6 +1302,7 @@
     button.dataset.openDuplicateFormId = item.id;
     controls.appendChild(button);
 
+    if (item.category === 'souvenir') return controls;
     const form = document.createElement('div');
     form.className = 'quote-run-form hidden';
     const quantityInput = document.createElement('input');
@@ -1019,11 +1388,12 @@
         addCell(row, OrderFinance.formatAmount(item.total));
         addCell(row, item.delivery || '-');
         addCell(row, '');
+        addCell(row, OrderFinance.formatAmount(OrderFinance.itemExpenses(item).total).replace(/\s/g, ''), 'quote-cost-cell');
         kpBody.appendChild(row);
         return;
       }
       addTitleCell(row, item);
-      addDetailsCell(row, item);
+      addDetailsCell(row, item, runItems);
       addQuantityCell(row, runItems, item);
       addRunValues(row, runItems, 'unitPrice', function (run) { return OrderFinance.formatAmount(run.unitPrice); });
       addRunValues(row, runItems, 'total', function (run) { return OrderFinance.formatAmount(run.total); });
@@ -1033,9 +1403,16 @@
       rowActions.className = 'quote-row-actions';
       const actionToolbar = document.createElement('div');
       actionToolbar.className = 'quote-action-toolbar';
-      const decorationButton = createQuoteActionButton('Добавить нанесение', '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/><path d="m19 14 1.2 3.2L23 18l-2.8.8L19 22l-1.2-3.2L15 18l2.8-.8L19 14z"/>', 'add-decoration');
-      decorationButton.dataset.calcDecorationId = item.id;
-      actionToolbar.appendChild(decorationButton);
+      const moveUpButton = createQuoteActionButton('Переместить позицию выше', '<path d="m6 14 6-6 6 6"/>');
+      moveUpButton.dataset.movePositionId = item.id;
+      moveUpButton.dataset.movePositionDirection = '-1';
+      moveUpButton.disabled = index === 0;
+      actionToolbar.appendChild(moveUpButton);
+      const moveDownButton = createQuoteActionButton('Переместить позицию ниже', '<path d="m6 10 6 6 6-6"/>');
+      moveDownButton.dataset.movePositionId = item.id;
+      moveDownButton.dataset.movePositionDirection = '1';
+      moveDownButton.disabled = index === runGroups.length - 1;
+      actionToolbar.appendChild(moveDownButton);
       const groupId = OrderFinance.runGroupKey(item);
       const overtimeAdjustments = collectInternalAdjustments('overtime', groupId);
       const cashbackAdjustments = collectInternalAdjustments('cashback', groupId);
@@ -1069,17 +1446,13 @@
         cashbackButton.disabled = hasActiveDiscount();
       }
       actionToolbar.appendChild(cashbackButton);
-      if (item.category === 'poly') {
-        const editButton = createQuoteActionButton('Изменить полиграфическую спецификацию', '<path d="m16 3 5 5-12 12H4v-5L16 3z"/><path d="m14 5 5 5"/>');
-        editButton.dataset.editItemId = item.id;
-        actionToolbar.appendChild(editButton);
-      }
       const removePositionButton = createQuoteActionButton('Удалить позицию', '<path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 5v5m4-5v5"/>', 'remove-action');
       removePositionButton.dataset.removePositionId = item.id;
       actionToolbar.appendChild(removePositionButton);
       rowActions.appendChild(actionToolbar);
       actionCell.appendChild(rowActions);
       row.appendChild(actionCell);
+      addCostCell(row, runItems);
       kpBody.appendChild(row);
     });
     if (items.length === 0) {
@@ -1087,7 +1460,7 @@
       const addCell = document.createElement('td');
       addCell.appendChild(createAddPositionButton());
       const emptyCell = document.createElement('td');
-      emptyCell.colSpan = 7;
+      emptyCell.colSpan = 8;
       emptyCell.className = 'empty-row';
       emptyCell.textContent = 'Таблица КП пока пуста';
       row.append(addCell, emptyCell);
@@ -1098,7 +1471,7 @@
       const addCell = document.createElement('td');
       addCell.appendChild(createAddPositionButton());
       const spacer = document.createElement('td');
-      spacer.colSpan = 7;
+      spacer.colSpan = 8;
       row.append(addCell, spacer);
       kpBody.appendChild(row);
     }
@@ -1138,14 +1511,10 @@
     const company = companyInput.value.trim().toUpperCase() || 'БЕЗ НАЗВАНИЯ';
     const date = new Intl.DateTimeFormat('ru-RU').format(new Date());
     document.getElementById('kp-document-heading').textContent = 'КП ' + date + ' ' + company;
-    document.getElementById('cost-poly').textContent = OrderFinance.formatAmount(totals.expenses.poly).replace(/\s/g, '') + ' теңге';
-    document.getElementById('cost-souvenir').textContent = OrderFinance.formatAmount(totals.expenses.souvenir).replace(/\s/g, '') + ' теңге';
-    document.getElementById('cost-other').textContent = OrderFinance.formatAmount(totals.expenses.other).replace(/\s/g, '') + ' теңге';
-    document.getElementById('cost-overtime').textContent = OrderFinance.formatAmount(totals.expenses.overtime).replace(/\s/g, '') + ' теңге';
-    document.getElementById('cost-cashback').textContent = OrderFinance.formatAmount(totals.expenses.cashback).replace(/\s/g, '') + ' теңге';
-    document.getElementById('cost-total').textContent = OrderFinance.formatAmount(totals.productionCost).replace(/\s/g, '') + ' теңге';
+    document.getElementById('kp-cost-total').textContent = OrderFinance.formatAmount(totals.productionCost).replace(/\s/g, '');
     document.getElementById('quote-count').textContent = String(runGroups.length);
     document.getElementById('btn-save-history').disabled = items.length === 0;
+    document.getElementById('btn-save-history-new').disabled = items.length === 0;
     document.getElementById('btn-copy-word').disabled = items.length === 0;
     document.getElementById('btn-download-pdf').disabled = items.length === 0;
     document.getElementById('btn-clear-kp').disabled = items.length === 0;
@@ -1157,8 +1526,12 @@
     syncButton.disabled = !managerId;
     if (managerId) {
       localStorage.setItem(currentHistoryManagerStorageKey, String(managerId));
-      OrderHistory.replaceManager(managerId, LegacyBridge.getPolyHistory());
+      OrderHistory.replaceManager(managerId, LegacyBridge.getPolyHistory().filter(function (record) { return !isDraftRecord(record); }));
     }
+  }
+
+  function isDraftRecord(record) {
+    return Boolean(record && (record.isDraft || String(record.id || '').startsWith('draft-')));
   }
 
   function renderManagerAuthStatus() {
@@ -1176,7 +1549,23 @@
       loginButton.textContent = 'Войти';
       loginButton.setAttribute('aria-label', 'Войти в полиграфический калькулятор');
     }
+    renderManagerSyncStatus();
   }
+
+  function renderManagerSyncStatus() {
+    const authenticated = LegacyBridge.isPolyAuthenticated();
+    document.body.classList.toggle('login-required', !authenticated);
+    document.getElementById('login-gate').classList.toggle('hidden', authenticated);
+    const badge = document.getElementById('manager-sync-status');
+    const state = authenticated ? LegacyBridge.getPolySyncState() : null;
+    const labels = { syncing: '⏳ Синхронизация...', online: '☁️ Онлайн', local: '💾 Локальный режим' };
+    badge.classList.toggle('hidden', !state);
+    badge.classList.toggle('is-online', state === 'online');
+    badge.classList.toggle('is-syncing', state === 'syncing');
+    badge.textContent = state ? labels[state] : '';
+  }
+
+  setInterval(renderManagerSyncStatus, 1000);
 
   function openManagerLoginDialog() {
     LegacyBridge.load('poly').then(function () {
@@ -1217,6 +1606,7 @@
     list.replaceChildren();
     const managerId = LegacyBridge.getPolyManagerId() || localStorage.getItem(currentHistoryManagerStorageKey);
     const allRecords = OrderHistory.getRecords().filter(function (record) {
+      if (isDraftRecord(record)) return false;
       return managerId ? (!record.managerId || String(record.managerId) === String(managerId)) : true;
     });
     const records = allRecords.filter(function (record) {
@@ -1274,6 +1664,12 @@
     return Number.isFinite(number) ? number : 0;
   }
 
+  function savedStatusText(text) {
+    return LegacyBridge.isPolyAuthenticated()
+      ? text
+      : text + ' Внимание: вход не выполнен, КП сохранено только в этом браузере. Войдите, чтобы отправить его в Google.';
+  }
+
   function saveCurrentHistory() {
     const items = OrderState.getItems();
     if (!items.length) return null;
@@ -1295,7 +1691,7 @@
     const existingRecord = OrderHistory.getRecords().find(function (record) {
       return currentHistoryId && String(record.id) === String(currentHistoryId);
     });
-    const legacyRecord = LegacyBridge.savePolyHistory(items, company, currentHistoryId, includeVat, currentHistoryManagerId, total);
+    const legacyRecord = LegacyBridge.savePolyHistory(items, company, currentHistoryId, includeVat, currentHistoryManagerId, total, { quoteSettings: quoteSettings });
     const historyRecord = legacyRecord
       ? Object.assign({}, legacyRecord, {
         id: currentHistoryId,
@@ -1339,8 +1735,37 @@
     persistCurrentHistoryId();
   }
 
+  let uploadedLocalForManager = null;
+
+  // КП, сохранённые до входа, лежат только в браузере: после входа отправляем их в Google под текущим менеджером.
+  function uploadLocalHistoryAfterLogin() {
+    const managerId = LegacyBridge.getPolyManagerId();
+    if (!managerId || String(uploadedLocalForManager) === String(managerId)) return 0;
+    uploadedLocalForManager = managerId;
+    const manager = LegacyBridge.getPolyPdfDependencies().manager || {};
+    const pending = OrderHistory.getRecords().filter(function (record) {
+      return !record.managerId && !isDraftRecord(record) && Array.isArray(record.items) && record.items.length;
+    });
+    pending.forEach(function (record) {
+      const owned = Object.assign({}, record, {
+        managerId: managerId,
+        managerName: manager.name || '',
+        date: new Intl.DateTimeFormat('ru-RU').format(new Date(record.createdAt || Date.now()))
+      });
+      OrderHistory.upsert(owned);
+      LegacyBridge.postHistoryRecord(owned);
+    });
+    return pending.length;
+  }
+
   function syncPendingHistoryAfterLogin() {
-    if (!LegacyBridge.isPolyAuthenticated() || !currentHistoryId || currentHistoryManagerId || !OrderState.getItems().length) return;
+    if (!LegacyBridge.isPolyAuthenticated()) return;
+    const uploaded = uploadLocalHistoryAfterLogin();
+    if (uploaded) {
+      renderHistory();
+      document.getElementById('quote-export-status').textContent = 'КП, сохранённые без входа (' + uploaded + '), отправлены в Google.';
+    }
+    if (!currentHistoryId || currentHistoryManagerId || !OrderState.getItems().length) return;
     saveCurrentHistory();
   }
 
@@ -1368,7 +1793,7 @@
       : 'Создано новое КП без сохранения предыдущего.';
   }
 
-  function editQuoteCell(cell) {
+function editQuoteCell(cell) {
     const id = cell.dataset.editId;
     const field = cell.dataset.editField;
     const value = cell.innerText.trim();
@@ -1380,15 +1805,39 @@
         const groupId = OrderFinance.runGroupKey(item);
         OrderState.getItems().filter(function (run) {
           return OrderFinance.runGroupKey(run) === groupId;
-        }).forEach(function (run) { OrderState.update(run.id, { [field]: nextValue }); });
+        }).forEach(function (run) {
+          const updates = { [field]: nextValue };
+          // Фиксируем ручную правку описания в baseDetails, чтобы нанесения не стирали текст
+          if (field === 'details') {
+            updates.baseDetails = nextValue;
+          }
+          OrderState.update(run.id, updates);
+        });
       } else {
         OrderState.update(id, { [field]: nextValue });
       }
       return;
     }
+    if (field === 'productionCost') {
+      const current = OrderFinance.itemExpenses(item).total;
+      const typed = numberFromText(value);
+      if (item.category !== 'other' || Math.round(typed) === Math.round(current)) return;
+      const base = item.productionCostByCategory && typeof item.productionCostByCategory === 'object'
+        ? Number(item.productionCostByCategory.other) || 0
+        : Number(item.productionCost) || 0;
+      const nextBase = Math.max(0, Math.round(base + typed - current));
+      OrderState.update(id, { productionCost: nextBase, productionCostByCategory: { other: nextBase } });
+      return;
+    }
     const numericValue = OrderFinance.amountToInclusive(numberFromText(value), includeVat);
     if (field === 'quantity') {
       const quantity = numberFromText(value);
+      if (item.category === 'poly' && Array.isArray(item.annotations) && item.annotations.length
+        && quantity !== Number(item.quantity)) {
+        cell.innerText = String(item.quantity);
+        document.getElementById('quote-export-status').textContent = 'Для изменения количества полиграфического тиража сначала уберите нанесение и рассчитайте его заново.';
+        return;
+      }
       OrderState.update(id, { quantity: quantity, total: Math.round(quantity * item.unitPrice) });
     } else if (field === 'unitPrice') {
       OrderState.update(id, { unitPrice: numericValue, total: Math.round(item.quantity * numericValue) });
@@ -1396,6 +1845,41 @@
       const unitPrice = item.quantity ? Math.round(numericValue / item.quantity) : 0;
       OrderState.update(id, { total: numericValue, unitPrice: unitPrice });
     }
+  }
+
+  const PHOTO_MAX_CHARS = 40000;
+
+  // Сжимает фото до ~30 КБ, чтобы запись помещалась в ячейку Google Sheets и в localStorage.
+  function compressPhoto(source) {
+    return new Promise(function (resolve) {
+      if (typeof source !== 'string' || !source.startsWith('data:image/') || source.length <= PHOTO_MAX_CHARS) {
+        resolve(source);
+        return;
+      }
+      const image = new Image();
+      image.onload = function () {
+        let maxSide = 640;
+        let quality = 0.8;
+        let result = source;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+          const context = canvas.getContext('2d');
+          context.fillStyle = '#fff';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          result = canvas.toDataURL('image/jpeg', quality);
+          if (result.length <= PHOTO_MAX_CHARS) break;
+          quality = Math.max(0.5, quality - 0.1);
+          maxSide = Math.round(maxSide * 0.8);
+        }
+        resolve(result);
+      };
+      image.onerror = function () { resolve(source); };
+      image.src = source;
+    });
   }
 
   function addPhotos(itemId, files) {
@@ -1408,9 +1892,10 @@
         reader.onload = function () { resolve(reader.result); };
         reader.onerror = function () { resolve(null); };
         reader.readAsDataURL(file);
-      });
+      }).then(compressPhoto);
     })).then(function (loadedPhotos) {
-      const existingPhotos = Array.isArray(item.photos) ? item.photos : (item.photo ? [item.photo] : []);
+      const current = OrderState.getItems().find(function (entry) { return String(entry.id) === String(itemId); }) || item;
+      const existingPhotos = Array.isArray(current.photos) ? current.photos : (current.photo ? [current.photo] : []);
       const photos = existingPhotos.concat(loadedPhotos.filter(Boolean));
       if (photos.length > existingPhotos.length) OrderState.update(itemId, { photos: photos });
     });
@@ -1419,8 +1904,11 @@
   function addPhotoDataUrls(itemId, dataUrls) {
     const item = OrderState.getItems().find(function (entry) { return String(entry.id) === String(itemId); });
     if (!item) return;
-    const photos = (item.photos || (item.photo ? [item.photo] : [])).concat(dataUrls);
-    OrderState.update(itemId, { photos: photos });
+    Promise.all(dataUrls.map(compressPhoto)).then(function (compressed) {
+      const current = OrderState.getItems().find(function (entry) { return String(entry.id) === String(itemId); }) || item;
+      const photos = (current.photos || (current.photo ? [current.photo] : [])).concat(compressed);
+      OrderState.update(itemId, { photos: photos });
+    });
   }
 
   function flushFocusedQuoteCell() {
@@ -1429,11 +1917,18 @@
     if (cell && kpBody.contains(cell)) editQuoteCell(cell);
   }
 
+  function moveQuotePosition(itemId, direction) {
+    const nextItems = OrderFinance.moveGroup(OrderState.getItems(), itemId, direction);
+    if (nextItems) OrderState.setItems(nextItems);
+  }
+
   function handleQuoteAction(button) {
     if (!button || button.dataset.actionHandled === 'true') return;
     button.dataset.actionHandled = 'true';
     flushFocusedQuoteCell();
-    if (button.dataset.editInternalAdjustmentId) {
+    if (button.dataset.movePositionId) {
+      moveQuotePosition(button.dataset.movePositionId, Number(button.dataset.movePositionDirection));
+    } else if (button.dataset.editInternalAdjustmentId) {
       const adjustmentId = button.dataset.editInternalAdjustmentId;
       const targetGroupId = button.dataset.editInternalAdjustmentTarget || '';
       if (button.dataset.editInternalAdjustmentType === 'cashback') openCashbackDialog(targetGroupId, adjustmentId);
@@ -1465,10 +1960,7 @@
       if (!item || !annotation) return;
       const annotationName = (annotation.services || []).join(' + ') || plainText(annotation.details || annotation.annotationText);
       if (!window.confirm('Убрать нанесение' + (annotationName ? ' «' + annotationName + '»' : '') + '?')) return;
-      const groupKey = OrderFinance.runGroupKey(item);
-      OrderState.getItems().filter(function (run) {
-        return OrderFinance.runGroupKey(run) === groupKey && run.annotations && run.annotations[annotationIndex];
-      }).forEach(function (run) { OrderState.removeDecoration(run.id, annotationIndex); });
+      OrderState.removeDecoration(item.id, annotationIndex);
     } else if (button.dataset.removeStockDecorationId) {
       removeStockDecoration(button.dataset.removeStockDecorationId);
     } else if (button.dataset.removeQuoteAdjustmentId) {
@@ -1491,12 +1983,20 @@
       const groupId = OrderFinance.runGroupKey(item);
       const runs = OrderState.getItems().filter(function (entry) { return OrderFinance.runGroupKey(entry) === groupId; });
       if (!runs.some(function (run) { return Array.isArray(run.annotations) && run.annotations.length; })) return;
-      if (window.confirm('Убрать нанесение из этой позиции?')) {
+      const annotationIndex = Number(button.dataset.annotationIndex);
+      if (window.confirm('Убрать выбранное нанесение со всех тиражей этой позиции?')) {
         runs.forEach(function (run) {
-          if (Array.isArray(run.annotations) && run.annotations.length) OrderState.removeDecoration(run.id);
+          if (Array.isArray(run.annotations) && run.annotations[annotationIndex]) OrderState.removeDecoration(run.id, annotationIndex);
         });
       }
     } else if (button.dataset.openDuplicateFormId) {
+      const source = OrderState.getItems().find(function (entry) { return String(entry.id) === String(button.dataset.openDuplicateFormId); });
+      if (source && source.category === 'souvenir') {
+        const groupId = OrderFinance.runGroupKey(source);
+        const runs = OrderState.getItems().filter(function (entry) { return OrderFinance.runGroupKey(entry) === groupId; });
+        startSouvenirRun(runs[runs.length - 1]);
+        return;
+      }
       const currentButton = Array.from(kpBody.querySelectorAll('[data-open-duplicate-form-id]')).find(function (entry) {
         return entry.dataset.openDuplicateFormId === button.dataset.openDuplicateFormId;
       });
@@ -1512,15 +2012,20 @@
       const input = button.parentElement.querySelector('input');
       const nextQuantity = Number(input && input.value);
       if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) return;
-      const runCalculation = item.category !== 'poly' || (Array.isArray(item.annotations) && item.annotations.length)
-        ? null
-        : LegacyBridge.calculatePolyRun(item, nextQuantity, includeVat);
-      OrderState.duplicateItem(item.id, Object.assign({ quantity: nextQuantity }, runCalculation || {}));
+      if (item.category === 'poly') {
+        addPolyRun(item, nextQuantity);
+      } else {
+        OrderState.duplicateItem(item.id, { quantity: nextQuantity });
+      }
     } else if (button.dataset.editItemId) {
       const itemId = button.dataset.editItemId;
       const items = OrderState.getItems();
       const itemIndex = items.findIndex(function (entry) { return String(entry.id) === String(itemId); });
       if (itemIndex < 0) return;
+      if (items[itemIndex].category === 'souvenir') {
+        startSouvenirRun(items[itemIndex], true);
+        return;
+      }
       openProductCalculator('poly').then(function () {
         const currentItems = OrderState.getItems();
         const currentIndex = currentItems.findIndex(function (entry) { return String(entry.id) === String(itemId); });
@@ -1531,10 +2036,65 @@
     }
   }
 
-  function startDecoration(itemId, annotationIndex) {
+  function startSouvenirRun(item, editing) {
+    if (!item) return;
+    const annotations = Array.isArray(item.annotations) ? item.annotations : [];
+    if (annotations.length > 1) {
+      window.alert('В этой позиции несколько отдельных расчётов нанесения. Добавьте новую позицию, чтобы пересчитать их без потери данных.');
+      return;
+    }
+    if (annotations.length) {
+      const basePrice = item.baseUnitPrice !== undefined
+        ? Number(item.baseUnitPrice) || 0
+        : Math.max(0, (Number(item.unitPrice) || 0) - (Number(annotations[0].unitPrice) || 0));
+      const baseCost = item.baseProductionCost !== undefined
+        ? Number(item.baseProductionCost) || 0
+        : Math.max(0, (Number(item.productionCost) || 0) - (Number(annotations[0].productionCost) || 0));
+      if (basePrice > 0 || baseCost > 0) {
+        window.alert('Позиция содержит отдельные расчёты товара и нанесения. Добавьте новую позицию, чтобы заново проверить оба расчёта.');
+        return;
+      }
+    }
+    const calculation = annotations.length ? annotations[0] : item;
+    const generation = ++decorationRestoreGeneration;
+    pendingSouvenirRunId = item.id;
+    pendingSouvenirRunEditing = Boolean(editing);
+    souvenirRunRestoring = true;
+    souvenirRunRestoreUnavailable = false;
+    souvenirRunLoadFailed = false;
+    openProductCalculator('souvenir').then(function (loaded) {
+      if (generation !== decorationRestoreGeneration || String(pendingSouvenirRunId) !== String(item.id)) return;
+      if (!loaded) throw new Error('Сувенирный калькулятор не загрузился');
+      souvenirRunRestoreUnavailable = !LegacyBridge.prepareSouvenirRun(calculation, item);
+      souvenirRunRestoring = false;
+      updateCalculationStatus();
+    }).catch(function (error) {
+      console.error('Ошибка восстановления сувенирного расчёта:', error);
+      if (generation !== decorationRestoreGeneration) return;
+      souvenirRunRestoring = false;
+      souvenirRunLoadFailed = true;
+      updateCalculationStatus();
+    });
+    productCalculatorTitle.textContent = editing ? 'Изменение тиража' : 'Новый тираж';
+  }
+
+  function startDecoration(itemId, annotationIndex, initialOrigin) {
     const item = OrderState.getItems().find(function (entry) { return String(entry.id) === String(itemId); });
     if (!item) return;
-    if (item.souvenirMode === 'sklad' && (!Array.isArray(item.annotations) || item.annotations.length === 0)) {
+    if (item.category === 'poly' && Number.isInteger(annotationIndex)) {
+      const selected = item.annotations && item.annotations[annotationIndex];
+      const groupId = OrderFinance.runGroupKey(item);
+      const selectedDescription = selected && plainText(selected.annotationText || selected.details);
+      const hasDifferentDecoration = OrderState.getItems().some(function (run) {
+        const annotation = run.annotations && run.annotations[annotationIndex];
+        return OrderFinance.runGroupKey(run) === groupId && annotation
+          && plainText(annotation.annotationText || annotation.details) !== selectedDescription;
+      });
+      if (hasDifferentDecoration && !window.confirm('В тиражах сохранены разные нанесения. Заменить их выбранным расчётом для всех тиражей?')) return;
+    }
+    const restoreGeneration = ++decorationRestoreGeneration;
+    if (item.souvenirMode === 'sklad' && Array.isArray(item.services) && item.services.length
+      && (!Array.isArray(item.annotations) || item.annotations.length === 0)) {
       startStockDecorationEdit(item.id);
       return;
     }
@@ -1543,27 +2103,45 @@
     pendingStockDecorationEdit = false;
     pendingDecorationRestoreUnavailable = false;
     openDecorationDialog(item.category === 'souvenir');
-    setActiveModule('souvenir').then(function () {
-      if (pendingDecorationEditIndex === null) return;
+    setActiveModule('souvenir').then(function (loaded) {
+      if (restoreGeneration !== decorationRestoreGeneration
+        || String(pendingDecorationItemId) !== String(item.id)
+        || pendingDecorationEditIndex !== (Number.isInteger(annotationIndex) ? annotationIndex : null)) return;
+      if (!loaded) return;
+      if (pendingDecorationEditIndex === null) {
+        LegacyBridge.prepareSouvenirRun({ souvenirMode: 'order', quantity: item.quantity }, item);
+        if (initialOrigin && !LegacyBridge.setSouvenirOrigin(initialOrigin)) {
+          failedModule = 'souvenir';
+        }
+        updateCalculationStatus();
+        return;
+      }
       const currentItem = OrderState.getItems().find(function (entry) { return String(entry.id) === String(pendingDecorationItemId); });
       const annotation = currentItem && currentItem.annotations && currentItem.annotations[pendingDecorationEditIndex];
       if (!annotation) return;
       const services = Array.isArray(annotation.services) ? annotation.services : [];
-      const servicesRestored = services.length > 0 && LegacyBridge.setSouvenirServices(services);
+      let servicesRestored = services.length > 0
+        && Array.isArray(annotation.serviceOptions)
+        && LegacyBridge.setSouvenirServices(services, annotation.serviceOptions);
       if (!services.length) LegacyBridge.setSouvenirServices([]);
       const calculationRestored = LegacyBridge.setSouvenirCalculation(annotation, currentItem);
-      pendingDecorationRestoreUnavailable = !servicesRestored && !calculationRestored;
+      pendingDecorationRestoreUnavailable = !servicesRestored || !calculationRestored;
       updateCalculationStatus();
-      if (!calculationRestored) {
+      if (!calculationRestored || (services.length && !servicesRestored)) {
         const requestedEditIndex = pendingDecorationEditIndex;
         let attemptsRemaining = 15;
         const retryCalculationRestore = function () {
-          if (String(pendingDecorationItemId) !== String(currentItem.id) || pendingDecorationEditIndex !== requestedEditIndex) return;
+          if (restoreGeneration !== decorationRestoreGeneration
+            || String(pendingDecorationItemId) !== String(currentItem.id)
+            || pendingDecorationEditIndex !== requestedEditIndex) return;
+          if (services.length) servicesRestored = LegacyBridge.setSouvenirServices(services, annotation.serviceOptions);
           const retryRestored = LegacyBridge.setSouvenirCalculation(annotation, currentItem);
-          pendingDecorationRestoreUnavailable = !servicesRestored && !retryRestored;
+          pendingDecorationRestoreUnavailable = !servicesRestored || !retryRestored;
           updateCalculationStatus();
           attemptsRemaining -= 1;
-          if (!retryRestored && attemptsRemaining > 0) window.setTimeout(retryCalculationRestore, 100);
+          if ((!retryRestored || (services.length && !servicesRestored)) && attemptsRemaining > 0) {
+            window.setTimeout(retryCalculationRestore, 100);
+          }
         };
         window.setTimeout(retryCalculationRestore, 100);
       }
@@ -1572,6 +2150,9 @@
 
   function updateStockServiceItem(item, calculation) {
     const photos = Array.isArray(item.photos) ? item.photos : (item.photo ? [item.photo] : []);
+    const charge = (item.quoteInternalAdjustments || []).reduce(function (sum, adjustment) {
+      return sum + (Number(adjustment.chargeAmount) || 0);
+    }, 0);
     OrderState.update(item.id, Object.assign({}, calculation, {
       id: item.id,
       category: 'souvenir',
@@ -1581,6 +2162,8 @@
       photo: photos[0] || null,
       sourceUrl: item.sourceUrl,
       delivery: item.delivery || calculation.delivery,
+      total: (Number(calculation.total) || 0) + charge,
+      unitPrice: (Number(calculation.unitPrice) || 0) + charge / (Number(calculation.quantity) || 1),
       productionCostByCategory: { souvenir: Number(calculation.productionCost) || 0 },
       annotations: undefined,
       baseDetails: undefined,
@@ -1598,11 +2181,12 @@
     pendingStockDecorationEdit = true;
     pendingDecorationRestoreUnavailable = true;
     openDecorationDialog(true);
-    setActiveModule('souvenir').then(function () {
+    setActiveModule('souvenir').then(function (loaded) {
+      if (!loaded) return;
       const currentItem = OrderState.getItems().find(function (entry) { return String(entry.id) === String(pendingDecorationItemId); });
       if (!currentItem) return;
       return restoreStockCalculation(currentItem, 15).then(function (calculationRestored) {
-        const servicesRestored = calculationRestored && LegacyBridge.setSouvenirServices(currentItem.services || []);
+        const servicesRestored = calculationRestored && LegacyBridge.setSouvenirServices(currentItem.services || [], currentItem.serviceOptions);
         pendingDecorationRestoreUnavailable = !calculationRestored || !servicesRestored;
         updateCalculationStatus();
       });
@@ -1659,23 +2243,77 @@
       return false;
     }
 
-    const groupId = OrderFinance.runGroupKey(target);
-    const groupItems = OrderState.getItems().filter(function (item) {
-      return OrderFinance.runGroupKey(item) === groupId;
-    });
-    groupItems.forEach(function (run) {
-      let runDecoration = decoration;
-      if (String(run.id) !== String(target.id)) {
-        LegacyBridge.setSouvenirQuantity(run.quantity);
-        runDecoration = LegacyBridge.add('souvenir');
+    if (target.category === 'poly') {
+      const groupId = OrderFinance.runGroupKey(target);
+      const runs = OrderState.getItems().filter(function (item) {
+        return item.category === 'poly' && OrderFinance.runGroupKey(item) === groupId;
+      });
+      const calculations = LegacyBridge.calculateDecorationRuns(runs.map(function (run) { return run.quantity; }));
+      if (!calculations) {
+        document.getElementById('calc-status').textContent = 'Не удалось пересчитать нанесение для всех тиражей. Проверьте параметры расчёта.';
+        return false;
       }
-      if (runDecoration) applyDecorationToRun(run, runDecoration, editIndex);
-    });
+      const changes = runs.map(function (run, index) {
+        return { id: run.id, changes: decorationChanges(run, calculations[index], editIndex) };
+      });
+      changes.forEach(function (entry) { OrderState.update(entry.id, entry.changes); });
+    } else {
+      applyDecorationToRun(target, decoration, editIndex);
+    }
     closeDecorationDialog();
     return true;
   }
 
-  function applyDecorationToRun(target, decoration, editIndex) {
+  function addPolyRun(source, quantity) {
+    const annotations = Array.isArray(source.annotations) ? source.annotations : [];
+    const generation = ++decorationRestoreGeneration;
+    polyRunCalculating = true;
+    openDecorationDialog(false);
+    document.getElementById('decoration-dialog-title').textContent = 'Расчёт нового тиража';
+    addToKpButton.disabled = true;
+    document.getElementById('calc-status').textContent = 'Пересчитываю тираж…';
+    LegacyBridge.load('poly').then(function () {
+      if (generation !== decorationRestoreGeneration) return false;
+      return annotations.length ? setActiveModule('souvenir') : true;
+    }).then(function (loaded) {
+      if (generation !== decorationRestoreGeneration) return;
+      if (!loaded) throw new Error('Не удалось загрузить калькулятор нанесения.');
+      const calculation = LegacyBridge.calculatePolyRun(source, quantity, true);
+      if (!calculation) throw new Error('Не удалось рассчитать спецификацию.');
+      let run = Object.assign({}, source, calculation, {
+        details: source.baseDetails !== undefined ? source.baseDetails : source.details,
+        baseDetails: source.baseDetails !== undefined ? source.baseDetails : source.details,
+        baseTotal: calculation.total,
+        baseUnitPrice: calculation.unitPrice,
+        baseProductionCost: calculation.productionCost,
+        productionCostByCategory: { poly: calculation.productionCost },
+        annotations: [],
+        quoteInternalAdjustments: []
+      });
+      annotations.forEach(function (annotation) {
+        if (!LegacyBridge.prepareSouvenirRun(annotation, source) || !LegacyBridge.setSouvenirQuantity(quantity)) {
+          throw new Error('Не удалось восстановить параметры нанесения.');
+        }
+        const nextDecoration = LegacyBridge.add('souvenir');
+        if (!nextDecoration || Number(nextDecoration.quantity) !== quantity) {
+          throw new Error('Не удалось пересчитать нанесение.');
+        }
+        run = Object.assign({}, run, decorationChanges(run, nextDecoration, null));
+      });
+      if (!OrderState.getItems().some(function (item) { return String(item.id) === String(source.id); })) {
+        throw new Error('Исходная позиция больше не существует.');
+      }
+      OrderState.addCalculatedRun(source.id, run);
+      closeDecorationDialog();
+    }).catch(function (error) {
+      if (generation !== decorationRestoreGeneration) return;
+      console.error('Ошибка добавления полиграфического тиража:', error);
+      closeDecorationDialog();
+      window.alert('Не удалось добавить тираж. Проверьте спецификацию и сохранённые параметры нанесения.');
+    });
+  }
+
+  function decorationChanges(target, decoration, editIndex) {
     const existingAnnotations = Array.isArray(target.annotations) ? target.annotations : [];
     const replacesAnnotation = Number.isInteger(editIndex) && editIndex >= 0 && editIndex < existingAnnotations.length;
     const serviceDetails = plainText(decoration.details);
@@ -1685,6 +2323,19 @@
       details: serviceDetails,
       annotationText: line,
       services: Array.isArray(decoration.services) ? decoration.services.slice() : [],
+      calculationOptions: decoration.calculationOptions ? {
+        inputs: Object.assign({}, decoration.calculationOptions.inputs || {}),
+        vat: decoration.calculationOptions.vat,
+        showUsd: decoration.calculationOptions.showUsd,
+        usdRate: decoration.calculationOptions.usdRate
+      } : null,
+      serviceOptions: Array.isArray(decoration.serviceOptions) ? decoration.serviceOptions.map(function (options) {
+        return Object.assign({}, options, {
+          dtfPoints: Array.isArray(options.dtfPoints) ? options.dtfPoints.map(function (point) {
+            return { w: Number(point.w) || 0, h: Number(point.h) || 0 };
+          }) : []
+        });
+      }) : [],
       souvenirMode: decoration.souvenirMode,
       stockProductValue: decoration.stockProductValue,
       quantity: decoration.quantity,
@@ -1702,8 +2353,11 @@
     const previousDecorationUnitPrice = existingAnnotations.reduce(function (sum, entry) { return sum + (Number(entry.unitPrice) || 0); }, 0);
     const previousDecorationCost = existingAnnotations.reduce(function (sum, entry) { return sum + (Number(entry.productionCost) || 0); }, 0);
     const quantity = Number(decoration.quantity) > 0 ? Number(decoration.quantity) : (Number(target.quantity) || 1);
-    const baseUnitPrice = target.baseUnitPrice !== undefined ? Number(target.baseUnitPrice) : Math.max(0, (Number(target.unitPrice) || 0) - previousDecorationUnitPrice);
-    const baseTotal = target.baseTotal !== undefined ? Number(target.baseTotal) : Math.max(0, (Number(target.total) || 0) - previousDecorationTotal);
+    const adjustmentCharge = (target.quoteInternalAdjustments || []).reduce(function (sum, adjustment) {
+      return sum + (Number(adjustment.chargeAmount) || 0);
+    }, 0);
+    const baseUnitPrice = target.baseUnitPrice !== undefined ? Number(target.baseUnitPrice) : Math.max(0, (Number(target.unitPrice) || 0) - previousDecorationUnitPrice - adjustmentCharge / quantity);
+    const baseTotal = target.baseTotal !== undefined ? Number(target.baseTotal) : Math.max(0, (Number(target.total) || 0) - previousDecorationTotal - adjustmentCharge);
     const baseProductionCost = target.baseProductionCost !== undefined ? Number(target.baseProductionCost) : Math.max(0, (Number(target.productionCost) || 0) - previousDecorationCost);
     const baseDetails = target.baseDetails !== undefined ? target.baseDetails : (target.details || '');
     const details = [baseDetails].concat(annotations.map(function (entry) {
@@ -1726,7 +2380,7 @@
     const annotationTotal = annotations.reduce(function (sum, entry) { return sum + (Number(entry.total) || 0); }, 0);
     const annotationUnitPrice = annotations.reduce(function (sum, entry) { return sum + (Number(entry.unitPrice) || 0); }, 0);
 
-    OrderState.update(target.id, {
+    return {
       details: details,
       baseDetails: baseDetails,
       baseTotal: baseTotal,
@@ -1734,13 +2388,67 @@
       baseProductionCost: baseProductionCost,
       annotations: annotations,
       quantity: quantity,
-      unitPrice: baseUnitPrice + annotationUnitPrice,
-      total: baseTotal + annotationTotal,
+      unitPrice: baseUnitPrice + annotationUnitPrice + adjustmentCharge / quantity,
+      total: baseTotal + annotationTotal + adjustmentCharge,
       productionCostByCategory: expenseByCategory,
       productionCost: productionCost,
       delivery: target.delivery || decoration.delivery || ''
-    });
+    };
+  }
+
+  function applyDecorationToRun(target, decoration, editIndex) {
+    OrderState.update(target.id, decorationChanges(target, decoration, editIndex));
     return true;
+  }
+
+  function addSouvenirRun(source, calculation, editing) {
+    const annotations = Array.isArray(source.annotations) ? source.annotations : [];
+    let changes;
+    if (annotations.length) {
+      const quantity = Number(calculation.quantity) || 1;
+      const oldQuantity = Number(source.quantity) || 1;
+      const baseUnitPrice = Number(source.baseUnitPrice) || 0;
+      const baseCost = Number(source.baseProductionCost) || 0;
+      const base = Object.assign({}, source, {
+        quantity: quantity,
+        unitPrice: baseUnitPrice,
+        total: baseUnitPrice * quantity,
+        baseTotal: baseUnitPrice * quantity,
+        baseUnitPrice: baseUnitPrice,
+        productionCost: baseCost * quantity / oldQuantity,
+        baseProductionCost: baseCost * quantity / oldQuantity,
+        productionCostByCategory: { souvenir: baseCost * quantity / oldQuantity },
+        quoteInternalAdjustments: editing ? source.quoteInternalAdjustments : [],
+        annotations: [],
+        details: source.baseDetails !== undefined ? source.baseDetails : source.details
+      });
+      changes = decorationChanges(base, calculation, null);
+    } else {
+      const previousAnnotationText = plainText(source.annotationText);
+      const previousDetails = plainText(source.details);
+      changes = Object.assign({}, calculation, {
+        title: source.title,
+        details: calculation.details || (previousAnnotationText
+          ? previousDetails.replace(previousAnnotationText, '').trim()
+          : previousDetails),
+        productionCostByCategory: { souvenir: Number(calculation.productionCost) || 0 },
+        annotations: [],
+        baseDetails: undefined,
+        baseTotal: undefined,
+        baseUnitPrice: undefined,
+        baseProductionCost: undefined
+      });
+      if (editing) {
+        const charge = (source.quoteInternalAdjustments || []).reduce(function (sum, adjustment) {
+          return sum + (Number(adjustment.chargeAmount) || 0);
+        }, 0);
+        changes.total += charge;
+        changes.unitPrice += charge / (Number(calculation.quantity) || 1);
+      }
+    }
+    if (editing) return OrderState.update(source.id, changes);
+    changes.quoteInternalAdjustments = [];
+    return OrderState.addCalculatedRun(source.id, changes);
   }
 
   function importLocalHistory(file) {
@@ -1760,16 +2468,42 @@
   }
 
   addToKpButton.addEventListener('click', function () {
+    if (pendingSouvenirRunId) {
+      if (souvenirRunRestoring || souvenirRunLoadFailed || !LegacyBridge.canAdd('souvenir')) return;
+      const source = OrderState.getItems().find(function (item) { return String(item.id) === String(pendingSouvenirRunId); });
+      const calculation = LegacyBridge.add('souvenir');
+      if (!source || !calculation || !addSouvenirRun(source, calculation, pendingSouvenirRunEditing)) {
+        document.getElementById('calc-status').textContent = 'Не удалось добавить тираж. Проверьте расчёт и попробуйте снова.';
+        return;
+      }
+      closeProductCalculatorDialog();
+      return;
+    }
     if (pendingDecorationItemId) {
       if (activeModule !== 'souvenir') {
         setActiveModule('souvenir');
         return;
       }
-      if (pendingDecorationEditIndex !== null && pendingDecorationRestoreUnavailable && !LegacyBridge.canAdd('souvenir')) {
+      if (pendingDecorationEditIndex !== null
+        && pendingDecorationRestoreUnavailable
+        && !LegacyBridge.canAddDecoration()) {
         closeDecorationDialog();
         return;
       }
+      if (!LegacyBridge.canAddDecoration()) {
+        updateCalculationStatus();
+        return;
+      }
       const decoration = LegacyBridge.add('souvenir');
+      const target = OrderState.getItems().find(function (entry) { return String(entry.id) === String(pendingDecorationItemId); });
+      const targetAnnotations = target && Array.isArray(target.annotations) ? target.annotations : [];
+      const baseTotal = target && target.baseTotal !== undefined ? Number(target.baseTotal) || 0
+        : target ? (Number(target.total) || 0) - targetAnnotations.reduce(function (sum, annotation) { return sum + (Number(annotation.total) || 0); }, 0) : 0;
+      if (decoration && target && !pendingStockDecorationEdit && (baseTotal > 0 || targetAnnotations.length > 1)
+        && Number(decoration.quantity) !== Number(target.quantity)) {
+        document.getElementById('calc-status').textContent = 'Количество нанесения должно совпадать с количеством выбранного тиража: ' + target.quantity + ' шт.';
+        return;
+      }
       if (decoration && pendingStockDecorationEdit) {
         const item = OrderState.getItems().find(function (entry) { return String(entry.id) === String(pendingDecorationItemId); });
         if (!item) return;
@@ -1785,6 +2519,9 @@
       if (updates) {
         updates.forEach(function (item) { OrderState.update(item.id, item); });
         closeProductCalculatorDialog();
+      } else {
+        document.getElementById('calc-status').textContent = 'Не удалось сохранить расчёт. Проверьте параметры; количество тиража с нанесением менять нельзя.';
+        return;
       }
       updateCalculationStatus();
       return;
@@ -1797,13 +2534,13 @@
     updateCalculationStatus();
   });
   kpBody.addEventListener('pointerdown', function (event) {
-    const button = event.target.closest('[data-remove-position-id], [data-remove-quote-adjustment-id], [data-remove-internal-adjustment-id], [data-edit-internal-adjustment-id], [data-edit-overtime-line-id], [data-add-overtime-target], [data-add-cashback-target], [data-edit-decoration-id], [data-edit-stock-decoration-id], [data-remove-stock-decoration-id], [data-calc-decoration-id], [data-remove-annotation-id], [data-remove-photo-id], [data-remove-decoration-group-id], [data-open-duplicate-form-id], [data-confirm-duplicate-item-id], [data-edit-item-id], [data-remove-id]');
+    const button = event.target.closest('[data-move-position-id], [data-remove-position-id], [data-remove-quote-adjustment-id], [data-remove-internal-adjustment-id], [data-edit-internal-adjustment-id], [data-edit-overtime-line-id], [data-add-overtime-target], [data-add-cashback-target], [data-edit-decoration-id], [data-edit-stock-decoration-id], [data-remove-stock-decoration-id], [data-calc-decoration-id], [data-remove-annotation-id], [data-remove-photo-id], [data-remove-decoration-group-id], [data-open-duplicate-form-id], [data-confirm-duplicate-item-id], [data-edit-item-id], [data-remove-id]');
     if (!button) return;
     event.preventDefault();
     handleQuoteAction(button);
   });
   kpBody.addEventListener('click', function (event) {
-    const button = event.target.closest('[data-remove-position-id], [data-remove-quote-adjustment-id], [data-remove-internal-adjustment-id], [data-edit-internal-adjustment-id], [data-edit-overtime-line-id], [data-add-overtime-target], [data-add-cashback-target], [data-edit-decoration-id], [data-edit-stock-decoration-id], [data-remove-stock-decoration-id], [data-calc-decoration-id], [data-remove-annotation-id], [data-remove-photo-id], [data-remove-decoration-group-id], [data-open-duplicate-form-id], [data-confirm-duplicate-item-id], [data-edit-item-id], [data-remove-id]');
+    const button = event.target.closest('[data-move-position-id], [data-remove-position-id], [data-remove-quote-adjustment-id], [data-remove-internal-adjustment-id], [data-edit-internal-adjustment-id], [data-edit-overtime-line-id], [data-add-overtime-target], [data-add-cashback-target], [data-edit-decoration-id], [data-edit-stock-decoration-id], [data-remove-stock-decoration-id], [data-calc-decoration-id], [data-remove-annotation-id], [data-remove-photo-id], [data-remove-decoration-group-id], [data-open-duplicate-form-id], [data-confirm-duplicate-item-id], [data-edit-item-id], [data-remove-id]');
     if (!button) return;
     if (button.dataset.actionHandled === 'true') {
       delete button.dataset.actionHandled;
@@ -1813,7 +2550,7 @@
   });
   kpBody.addEventListener('keydown', function (event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
-    const button = event.target.closest('[data-remove-position-id], [data-remove-quote-adjustment-id], [data-remove-internal-adjustment-id], [data-edit-internal-adjustment-id], [data-edit-overtime-line-id], [data-add-overtime-target], [data-add-cashback-target], [data-edit-decoration-id], [data-edit-stock-decoration-id], [data-remove-stock-decoration-id], [data-calc-decoration-id], [data-remove-annotation-id], [data-remove-photo-id], [data-remove-decoration-group-id], [data-open-duplicate-form-id], [data-confirm-duplicate-item-id], [data-edit-item-id], [data-remove-id]');
+    const button = event.target.closest('[data-move-position-id], [data-remove-position-id], [data-remove-quote-adjustment-id], [data-remove-internal-adjustment-id], [data-edit-internal-adjustment-id], [data-edit-overtime-line-id], [data-add-overtime-target], [data-add-cashback-target], [data-edit-decoration-id], [data-edit-stock-decoration-id], [data-remove-stock-decoration-id], [data-calc-decoration-id], [data-remove-annotation-id], [data-remove-photo-id], [data-remove-decoration-group-id], [data-open-duplicate-form-id], [data-confirm-duplicate-item-id], [data-edit-item-id], [data-remove-id]');
     if (!button) return;
     event.preventDefault();
     handleQuoteAction(button);
@@ -1868,21 +2605,17 @@
   }
 
   function addManualPosition() {
-    const quantity = Math.max(1, Number(document.getElementById('manual-position-quantity').value) || 1);
-    const unitPrice = Math.max(0, Number(document.getElementById('manual-position-unit-price').value) || 0);
-    const productionCost = Math.max(0, Number(document.getElementById('manual-position-cost').value) || 0);
     const id = OrderState.add({
       category: 'other',
-      title: document.getElementById('manual-position-title-input').value.trim() || 'Новая позиция',
-      details: document.getElementById('manual-position-details').value.trim(),
-      quantity: quantity,
-      unitPrice: unitPrice,
-      total: Math.round(quantity * unitPrice),
-      productionCost: productionCost,
-      productionCostByCategory: { other: productionCost },
-      delivery: document.getElementById('manual-position-delivery').value.trim()
+      title: 'Новая позиция',
+      details: '',
+      quantity: 1,
+      unitPrice: 0,
+      total: 0,
+      productionCost: 0,
+      productionCostByCategory: { other: 0 },
+      delivery: ''
     });
-    document.getElementById('manual-position-dialog').close();
     focusQuoteTitle(id);
   }
 
@@ -1899,21 +2632,7 @@
   });
   document.getElementById('btn-select-custom-position').addEventListener('click', function () {
     positionTypeDialog.close();
-    document.getElementById('manual-position-title-input').value = 'Новая позиция';
-    document.getElementById('manual-position-details').value = '';
-    document.getElementById('manual-position-quantity').value = '1';
-    document.getElementById('manual-position-unit-price').value = '0';
-    document.getElementById('manual-position-cost').value = '0';
-    document.getElementById('manual-position-delivery').value = '';
-    document.getElementById('manual-position-dialog').showModal();
-    document.getElementById('manual-position-title-input').focus();
-  });
-  document.getElementById('btn-create-manual-position').addEventListener('click', addManualPosition);
-  document.getElementById('btn-cancel-manual-position').addEventListener('click', function () {
-    document.getElementById('manual-position-dialog').close();
-  });
-  document.getElementById('btn-close-manual-position').addEventListener('click', function () {
-    document.getElementById('manual-position-dialog').close();
+    addManualPosition();
   });
   document.getElementById('btn-create-poly-position').addEventListener('click', function () {
     positionTypeDialog.close();
@@ -1954,11 +2673,12 @@
         productionCost: 0,
         productionCostByCategory: { souvenir: 0 },
         delivery: getSouvenirProductDelivery(product.sourceUrl),
-        photos: [product.photo],
+        photos: product.photo ? [product.photo] : [],
         sourceUrl: product.sourceUrl
       });
       souvenirLinkDialog.close();
-      startDecoration(itemId);
+      if (!product.photo) alert('Позиция добавлена, но фото товара с сайта загрузить не удалось. Добавьте фото вручную (кнопка добавления фото у позиции).');
+      startDecoration(itemId, null, LegacyBridge.souvenirOriginForUrl(product.sourceUrl));
     } catch (error) {
       if (requestId !== souvenirImportRequestId || !souvenirLinkDialog.open) return;
       souvenirLinkStatus.textContent = error && error.message ? error.message : 'Не удалось загрузить товар по ссылке';
@@ -1968,7 +2688,14 @@
   document.getElementById('btn-manual-souvenir').addEventListener('click', function () {
     souvenirImportRequestId += 1;
     souvenirLinkDialog.close();
-    openProductCalculator('souvenir');
+    const generation = ++decorationRestoreGeneration;
+    openProductCalculator('souvenir').then(function (loaded) {
+      if (!loaded || generation !== decorationRestoreGeneration || !productCalculatorDialog.open || activeModule !== 'souvenir') return;
+      if (!LegacyBridge.setSouvenirOrigin('kazakhstan')) {
+        failedModule = 'souvenir';
+        updateCalculationStatus();
+      }
+    });
   });
   document.getElementById('btn-close-souvenir-link').addEventListener('click', function () {
     souvenirImportRequestId += 1;
@@ -1985,7 +2712,8 @@
     closeProductCalculatorDialog();
   });
   document.getElementById('btn-cancel-decoration').addEventListener('click', function () {
-    closeDecorationDialog();
+    if (pendingSouvenirRunId) closeProductCalculatorDialog();
+    else closeDecorationDialog();
   });
   document.getElementById('btn-close-decoration-dialog').addEventListener('click', closeDecorationDialog);
   decorationDialog.addEventListener('cancel', function (event) {
@@ -2047,7 +2775,14 @@
     });
   document.getElementById('btn-save-history').addEventListener('click', function () {
     const saved = saveCurrentHistory();
-    document.getElementById('quote-export-status').textContent = saved ? 'КП сохранено в истории.' : 'Нет позиций для сохранения.';
+    document.getElementById('quote-export-status').textContent = saved ? savedStatusText('Отправляю КП в Google и проверяю позиции и фото…') : 'Нет позиций для сохранения.';
+  });
+  document.getElementById('btn-save-history-new').addEventListener('click', function () {
+    if (!OrderState.getItems().length) return;
+    currentHistoryId = null;
+    currentHistoryManagerId = null;
+    const saved = saveCurrentHistory();
+    document.getElementById('quote-export-status').textContent = saved ? savedStatusText('Отправляю КП в Google и проверяю позиции и фото…') : 'Нет позиций для сохранения.';
   });
   document.getElementById('btn-copy-word').addEventListener('click', function () {
     saveCurrentHistory();
@@ -2145,6 +2880,7 @@
   document.getElementById('btn-manager-login').addEventListener('click', function () {
     openManagerLoginDialog();
   });
+  document.getElementById('btn-gate-login').addEventListener('click', openManagerLoginDialog);
   document.getElementById('btn-close-manager-login').addEventListener('click', function () {
     document.getElementById('manager-login-dialog').close();
   });
@@ -2231,7 +2967,61 @@
   });
 
   restoreCurrentHistory();
+
+  // Сжатие ранее сохранённых крупных фото (история освобождается первой, чтобы вернуть место в localStorage).
+  async function compactStoredPhotos() {
+    const compactList = function (list) {
+      return Promise.all((list || []).map(compressPhoto));
+    };
+    const compactItem = async function (item) {
+      const photos = Array.isArray(item.photos) ? item.photos : (item.photo ? [item.photo] : []);
+      if (!photos.some(function (photo) { return typeof photo === 'string' && photo.length > PHOTO_MAX_CHARS; })) return null;
+      const compressed = await compactList(photos);
+      return Object.assign({}, item, { photos: compressed, photo: compressed[0] || null });
+    };
+    const records = OrderHistory.getRecords();
+    for (const record of records) {
+      if (!Array.isArray(record.items)) continue;
+      let changed = false;
+      const nextItems = [];
+      for (const item of record.items) {
+        const next = await compactItem(item);
+        if (next) changed = true;
+        nextItems.push(next || item);
+      }
+      if (changed) OrderHistory.upsert(Object.assign({}, record, { items: nextItems, updatedAt: record.updatedAt || record.createdAt }));
+    }
+    const current = OrderState.getItems();
+    let currentChanged = false;
+    const nextCurrent = [];
+    for (const item of current) {
+      const next = await compactItem(item);
+      if (next) currentChanged = true;
+      nextCurrent.push(next || item);
+    }
+    if (currentChanged) OrderState.setItems(nextCurrent);
+  }
+  compactStoredPhotos().catch(function () {});
+  let quotaWarned = false;
+  window.addEventListener('storage:photo-cache-failed', function () {
+    if (quotaWarned) return;
+    quotaWarned = true;
+    alert('Не удалось сохранить фото в отдельном хранилище браузера. Проверьте свободное место и поддержку IndexedDB; фото в Google не затронуты.');
+  });
+  window.addEventListener('storage:quota-exceeded', function () {
+    if (quotaWarned) return;
+    quotaWarned = true;
+    alert('Память браузера переполнена: не удалось сохранить данные КП. Освободите место в хранилище сайта.');
+  });
+  window.addEventListener('history:google-save-result', function (event) {
+    const result = event.detail || {};
+    document.getElementById('quote-export-status').textContent = result.success
+      ? 'Google подтвердил сохранение КП: ' + result.itemCount + ' позиций, фото: ' + result.photoCount + '. ' + (result.message || '')
+      : 'Не удалось сохранить КП в Google: ' + (result.message || 'сервер не подтвердил запись.');
+  });
+
   OrderState.subscribe(renderQuote);
+  OrderHistory.subscribe(renderHistory);
   LegacyBridge.subscribe(function () {
     updateCalculationStatus();
     renderHistory();

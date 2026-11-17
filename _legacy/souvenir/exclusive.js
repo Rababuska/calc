@@ -10,7 +10,7 @@ const exclusiveBagsPrices = [
     { max: Infinity, price: 370 }
 ];
 
-function calculateExclusive(exType, quantity) {
+function calculateExclusive(exType, quantity, cliche = {}) {
     let totalCost = 0;
 
     if (exType === 'emboss_notebook' || exType === 'emboss_sheet') {
@@ -18,9 +18,9 @@ function calculateExclusive(exType, quantity) {
         let udarPrice = (exType === 'emboss_notebook') ? 150 : 100;
         let clicheCost = 0;
 
-        if (!$('#clicheExists').is(':checked')) {
-            let w = Number($('#clicheW').val()) || 0;
-            let h = Number($('#clicheH').val()) || 0;
+        if (!cliche.exists) {
+            let w = Number(cliche.width) || 0;
+            let h = Number(cliche.height) || 0;
             let areaCm = 0;
 
             // Техническое поле +10 мм к ширине и высоте
@@ -28,13 +28,9 @@ function calculateExclusive(exType, quantity) {
                 areaCm = ((w + 10) * (h + 10)) / 100;
             }
 
-            $('#clicheAreaOut').text(`(${areaCm.toFixed(1)} см²)`);
-
             // 250 тг за см², минималка 3 500 тг
             let calculatedClicheCost = areaCm * 250;
             clicheCost = Math.max(3500, calculatedClicheCost);
-        } else {
-            $('#clicheAreaOut').text(`(0 см²)`);
         }
 
         totalCost = clicheCost + priladka + (udarPrice * quantity);

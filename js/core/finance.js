@@ -88,6 +88,9 @@
 
   function metadataExtraProductionCost(item) {
     const quantity = Number(item.quantity) || 0;
+    const description = Array.isArray(item.annotations) && item.annotations.length && item.baseDetails !== undefined
+      ? item.baseDetails
+      : (item.details || item.desc || '');
     if (item.productionCostIncludesFinish || item.finishCostCalculated) {
       return 0;
     }
@@ -116,11 +119,11 @@
       item.embossType ||
       item.notebookEmboss ||
       item.notebook_emboss ||
-      /тисн|emboss/i.test(String(item.details || item.desc || ''))
+      /тисн|emboss/i.test(String(description))
     );
 
     if (hasEmbossing) {
-      const embossText = String(item.title || '') + ' ' + String(item.details || item.desc || '');
+      const embossText = String(item.title || '') + ' ' + String(description);
       const isNotebookEmboss = item.embossing === 'notebook' || item.notebookEmboss === 'notebook' || item.notebookEmboss === true || item.notebook_emboss === true || /(?:блокн|ежеднев).{0,60}тисн|тисн.{0,60}(?:блокн|ежеднев)/i.test(embossText);
       const isCustomerCliche = Boolean(
         item.customerCliche ||
@@ -138,7 +141,7 @@
       }
 
       const setupCost = isNotebookEmboss ? 7000 : 5000;
-      const isFoil = item.embossType === 'foil' || /фольг|foil/i.test(String(item.embossType || item.details || ''));
+      const isFoil = item.embossType === 'foil' || /фольг|foil/i.test(String(item.embossType || description));
       const impressionRate = isNotebookEmboss ? 150 : (isFoil ? 65 : 45);
       const impressionsCost = impressionRate * (quantity || 1);
 
@@ -146,6 +149,39 @@
     }
 
     return extraCost;
+  }
+
+  function itemExpenses(item) {
+    const expenses = { poly: 0, souvenir: 0, other: 0, overtime: 0, cashback: 0 };
+    const extraProductionCost = metadataExtraProductionCost(item);
+    const rawPolyCost = Number(item.productionCost) || 0;
+    const productionCostWithTax = Number(item.productionCostWithTax);
+    const polyCost = Number.isFinite(productionCostWithTax) && productionCostWithTax > 0
+      ? productionCostWithTax
+      : rawPolyCost;
+    if (item.productionCostByCategory && typeof item.productionCostByCategory === 'object') {
+      Object.keys(item.productionCostByCategory).forEach(function (category) {
+        const bucket = category === 'poly' || category === 'souvenir' ? category : 'other';
+        const categoryCost = category === 'poly' && Number.isFinite(productionCostWithTax) && productionCostWithTax > 0
+          ? productionCostWithTax
+          : Number(item.productionCostByCategory[category]) || 0;
+        expenses[bucket] += categoryCost;
+      });
+    } else {
+      const bucket = item.category === 'poly' || item.category === 'souvenir' ? item.category : 'other';
+      expenses[bucket] += bucket === 'poly' ? polyCost : rawPolyCost;
+    }
+    if (extraProductionCost > 0) {
+      expenses.other += extraProductionCost;
+    }
+    const internalAdjustments = Array.isArray(item.quoteInternalAdjustments) ? item.quoteInternalAdjustments : [];
+    internalAdjustments.forEach(function (adjustment) {
+      if (adjustment.type === 'overtime') expenses.overtime += Number(adjustment.expenseAmount) || 0;
+      if (adjustment.type === 'cashback') expenses.cashback += Number(adjustment.expenseAmount) || 0;
+    });
+    expenses.overtime += Number(item.overtimeExpense) || 0;
+    expenses.total = expenses.poly + expenses.souvenir + expenses.other + expenses.overtime + expenses.cashback;
+    return expenses;
   }
 
   function runGroupKey(item, index) {
@@ -212,6 +248,34 @@
     return Array.from(groups.values());
   }
 
+  function describeRunDetails(runs) {
+    function plainDetails(item) {
+      return String(item.details || '').replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
+    }
+    if (!runs.length) return '';
+    const details = runs.map(plainDetails);
+    if (details.every(function (text) { return text === details[0]; })) return details[0];
+    return runs.map(function (run, index) {
+      return 'Тираж ' + (index + 1) + ' (' + run.quantity + ' шт.): ' + (details[index] || '—');
+    }).join('\n');
+  }
+
+  function moveGroup(items, itemId, direction) {
+    if (!Array.isArray(items) || (direction !== -1 && direction !== 1)) return null;
+    const item = items.find(function (entry) { return String(entry.id) === String(itemId); });
+    if (!item) return null;
+    const groups = groupRuns(items);
+    const groupIndex = groups.findIndex(function (group) {
+      return runGroupKey(group[0]) === runGroupKey(item);
+    });
+    const targetIndex = groupIndex + direction;
+    if (groupIndex < 0 || targetIndex < 0 || targetIndex >= groups.length) return null;
+    groups.splice(targetIndex, 0, groups.splice(groupIndex, 1)[0]);
+    return groups.reduce(function (orderedItems, group) {
+      return orderedItems.concat(group);
+    }, []);
+  }
+
   function formatAmount(amount) {
     return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(amount);
   }
@@ -224,7 +288,10 @@
     normalizeQuoteSettings: normalizeQuoteSettings,
     itemsForVat: itemsForVat,
     runGroupKey: runGroupKey,
+    itemExpenses: itemExpenses,
     groupRuns: groupRuns,
+    describeRunDetails: describeRunDetails,
+    moveGroup: moveGroup,
     calculate: function (itemsOrOrder, includeVat, settingsOrOptions) {
       const isOrderObj = itemsOrOrder && !Array.isArray(itemsOrOrder) && Array.isArray(itemsOrOrder.items);
       const items = isOrderObj ? itemsOrOrder.items : (Array.isArray(itemsOrOrder) ? itemsOrOrder : []);
@@ -241,25 +308,8 @@
 
       const expenses = { poly: 0, souvenir: 0, other: 0, overtime: 0, cashback: 0 };
       items.forEach(function (item) {
-        const extraProductionCost = metadataExtraProductionCost(item);
-        if (item.productionCostByCategory && typeof item.productionCostByCategory === 'object') {
-          Object.keys(item.productionCostByCategory).forEach(function (category) {
-            const bucket = category === 'poly' || category === 'souvenir' ? category : 'other';
-            expenses[bucket] += Number(item.productionCostByCategory[category]) || 0;
-          });
-        } else {
-          const bucket = item.category === 'poly' || item.category === 'souvenir' ? item.category : 'other';
-          expenses[bucket] += Number(item.productionCost) || 0;
-        }
-        if (extraProductionCost > 0) {
-          expenses.other += extraProductionCost;
-        }
-        const internalAdjustments = Array.isArray(item.quoteInternalAdjustments) ? item.quoteInternalAdjustments : [];
-        internalAdjustments.forEach(function (adjustment) {
-          if (adjustment.type === 'overtime') expenses.overtime += Number(adjustment.expenseAmount) || 0;
-          if (adjustment.type === 'cashback') expenses.cashback += Number(adjustment.expenseAmount) || 0;
-        });
-        expenses.overtime += Number(item.overtimeExpense) || 0;
+        const itemExpense = itemExpenses(item);
+        Object.keys(expenses).forEach(function (bucket) { expenses[bucket] += itemExpense[bucket]; });
       });
 
       const productionCost = expenses.poly + expenses.souvenir + expenses.other + expenses.overtime + expenses.cashback;

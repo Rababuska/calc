@@ -13,6 +13,7 @@
     const vatLabel = includeVat === false ? 'без учета НДС' : 'с учетом НДС 16%';
     const rows = runGroups.map(function (runItems, index) {
       const item = runItems[0];
+      const details = OrderFinance.describeRunDetails(runItems);
       const photos = Array.isArray(item.photos) ? item.photos : (item.photo ? [item.photo] : []);
       const photo = photos.filter(function (source) {
         return typeof source === 'string' && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(source);
@@ -21,7 +22,7 @@
       }).join('');
       return '<tr><td>' + (index + 1) + '</td><td><strong>' + escapeHtml(item.title) + '</strong>' +
         photo +
-        (item.details ? '<br><small>' + escapeHtml(item.details) + '</small>' : '') +
+        (details ? '<br><small>' + escapeHtml(details).replace(/\n/g, '<br>') + '</small>' : '') +
         '</td><td>' + runItems.map(function (run) { return escapeHtml(run.quantity); }).join('<br>') + '</td><td>' + runItems.map(function (run) { return OrderFinance.formatAmount(run.unitPrice); }).join('<br>') +
         '</td><td>' + runItems.map(function (run) { return OrderFinance.formatAmount(run.total); }).join('<br>') + '</td><td>' + runItems.map(function (run) { return escapeHtml(run.delivery || '-'); }).join('<br>') + '</td></tr>';
     }).join('');
@@ -51,7 +52,7 @@
       }).map(function (source) {
         return '<br><img src="' + escapeHtml(source) + '" width="75" style="max-width:75px;max-height:75px">';
       }).join('');
-      const details = escapeHtml(item.details).replace(/\n/g, '<br>');
+      const details = escapeHtml(OrderFinance.describeRunDetails(runItems)).replace(/\n/g, '<br>');
       return '<tr><td>' + (index + 1) + '</td><td><strong>' + escapeHtml(item.title) + '</strong>' + images +
         '</td><td>' + details + '</td><td>' + runGroups[index].map(function (run) { return escapeHtml(run.quantity); }).join('<br>') + '</td><td>' +
         runGroups[index].map(function (run) { return escapeHtml(OrderFinance.formatAmount(run.unitPrice)); }).join('<br>') + '</td><td><strong>' + runGroups[index].map(function (run) { return escapeHtml(OrderFinance.formatAmount(run.total)); }).join('<br>') + '</strong></td><td>' +
@@ -155,7 +156,7 @@
       tableBody.push([
         { text: String(index + 1), alignment: 'center' },
         titleContent,
-        { text: plainDescription(item.details), alignment: 'left' },
+        { text: OrderFinance.describeRunDetails(runItems), alignment: 'left' },
         { text: runItems.map(function (run) { return String(run.quantity); }).join('\n'), alignment: 'center' },
         { text: runItems.map(function (run) { return OrderFinance.formatAmount(run.unitPrice); }).join('\n'), alignment: 'center' },
         { text: runItems.map(function (run) { return OrderFinance.formatAmount(run.total); }).join('\n'), bold: true, alignment: 'center' },

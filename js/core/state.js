@@ -13,6 +13,42 @@
 
   let items = readItems().map(normalize);
 
+  function reportPhotoStorageError(key, error) {
+    console.error('Не удалось сохранить фото:', error);
+    window.dispatchEvent(new CustomEvent('storage:photo-cache-failed', { detail: { key: key, message: error && error.message } }));
+  }
+
+  function cachePhotos(key, photos) {
+    if (!window.PhotoStorage) {
+      reportPhotoStorageError(storageKey, new Error('Модуль хранения фото не загружен'));
+      return;
+    }
+    window.PhotoStorage.save(key, photos).catch(function (error) {
+      reportPhotoStorageError(storageKey, error);
+    });
+  }
+
+  function restoreStoredPhotos() {
+    const pending = items.map(function (item, index) {
+      if (!item.photoCacheKey || item.photos.length) return Promise.resolve(false);
+      return window.PhotoStorage.load(item.photoCacheKey).then(function (photos) {
+        if (!Array.isArray(photos) || !photos.length) return false;
+        const current = items[index];
+        if (!current || String(current.id) !== String(item.id) || current.photos.length) return false;
+        items[index] = Object.assign({}, current, { photos: photos, photo: photos[0] });
+        return true;
+      }).catch(function (error) {
+        reportPhotoStorageError(storageKey, error);
+        return false;
+      });
+    });
+    Promise.all(pending).then(function (restored) {
+      if (restored.some(Boolean)) publish(false);
+    });
+  }
+
+  restoreStoredPhotos();
+
   function firstDefined(item, keys, fallback) {
     for (let index = 0; index < keys.length; index++) {
       if (item[keys[index]] !== undefined && item[keys[index]] !== null) return item[keys[index]];
@@ -72,12 +108,25 @@
     });
   }
 
-  function publish() {
+  function publish(persistChanges) {
     const currentItems = snapshot();
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(currentItems));
-    } catch (error) {
-      // The in-memory order remains usable when browser storage is unavailable.
+    if (persistChanges !== false) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(currentItems));
+      } catch (error) {
+        const fallbackItems = currentItems.map(function (item) {
+          const photos = Array.isArray(item.photos) ? item.photos : [];
+          if (!photos.length) return item;
+          const photoCacheKey = item.photoCacheKey || 'order:' + item.id;
+          cachePhotos(photoCacheKey, photos);
+          return Object.assign({}, item, { photos: [], photo: null, photoCacheKey: photoCacheKey });
+        });
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(fallbackItems));
+        } catch (fallbackError) {
+          window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: { key: storageKey } }));
+        }
+      }
     }
     listeners.forEach(function (listener) {
       listener(currentItems);
@@ -109,8 +158,10 @@
       if (Array.isArray(changes.photos)) {
         updated.photos = changes.photos.slice();
         updated.photo = updated.photos[0] || null;
+        updated.photoCacheKey = updated.photos.length ? (updated.photoCacheKey || 'order:' + updated.id) : null;
       } else if (Object.prototype.hasOwnProperty.call(changes, 'photo')) {
         updated.photos = changes.photo ? [changes.photo] : [];
+        updated.photoCacheKey = updated.photos.length ? (updated.photoCacheKey || 'order:' + updated.id) : null;
       }
       if (changes.total === undefined && (changes.quantity !== undefined || changes.unitPrice !== undefined)) {
         updated.total = (Number(updated.quantity) || 0) * (Number(updated.unitPrice) || 0);
@@ -154,6 +205,25 @@
       publish();
       return copied.id;
     },
+    addCalculatedRun: function (id, changes) {
+      const source = items.find(function (item) { return String(item.id) === String(id); });
+      if (!source) return null;
+      const groupId = source.runGroupId || source.id;
+      const copiedChanges = {};
+      Object.keys(changes).forEach(function (key) {
+        copiedChanges[key] = changes[key] === undefined ? undefined : cloneValue(changes[key]);
+      });
+      const copied = Object.assign({}, cloneValue(source), copiedChanges, {
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : String(Date.now()) + ':' + Math.random(),
+        runGroupId: groupId
+      });
+      copied.base_total = copied.total;
+      copied.base_one_total = copied.unitPrice;
+      source.runGroupId = groupId;
+      items.push(normalize(copied));
+      publish();
+      return copied.id;
+    },
     removeDecoration: function (id, annotationIndex) {
       const index = items.findIndex(function (item) { return String(item.id) === String(id); });
       if (index < 0) return false;
@@ -174,10 +244,14 @@
       const allDecorationTotal = annotations.reduce(function (sum, annotation) {
         return sum + (Number(annotation.total) || 0);
       }, 0);
-      const baseTotal = item.baseTotal !== undefined ? Number(item.baseTotal) : Math.max(0, (Number(item.total) || 0) - allDecorationTotal);
+      const adjustmentCharge = (item.quoteInternalAdjustments || []).reduce(function (sum, adjustment) {
+        return sum + (Number(adjustment.chargeAmount) || 0);
+      }, 0);
+      const quantity = Number(item.quantity) || 1;
+      const baseTotal = item.baseTotal !== undefined ? Number(item.baseTotal) : Math.max(0, (Number(item.total) || 0) - allDecorationTotal - adjustmentCharge);
       const baseUnitPrice = item.baseUnitPrice !== undefined ? Number(item.baseUnitPrice) : Math.max(0, (Number(item.unitPrice) || 0) - annotations.reduce(function (sum, annotation) {
         return sum + (Number(annotation.unitPrice) || 0);
-      }, 0));
+      }, 0) - adjustmentCharge / quantity);
       const baseProductionCost = item.baseProductionCost !== undefined ? Number(item.baseProductionCost) : Math.max(0, (Number(item.productionCost) || 0) - allDecorationCost);
       const remainingTotal = remainingAnnotations.reduce(function (sum, annotation) { return sum + (Number(annotation.total) || 0); }, 0);
       const remainingUnitPrice = remainingAnnotations.reduce(function (sum, annotation) { return sum + (Number(annotation.unitPrice) || 0); }, 0);
@@ -195,8 +269,8 @@
       const nextProductionCost = Object.keys(reducedCategories).reduce(function (sum, key) {
         return sum + (Number(reducedCategories[key]) || 0);
       }, 0);
-      const restoredTotal = baseTotal + remainingTotal;
-      const restoredUnitPrice = baseUnitPrice + remainingUnitPrice;
+      const restoredTotal = baseTotal + remainingTotal + adjustmentCharge;
+      const restoredUnitPrice = baseUnitPrice + remainingUnitPrice + adjustmentCharge / quantity;
       const baseDetails = item.baseDetails !== undefined ? item.baseDetails : stripAnnotationText(item.details, annotations);
       const restoredDetails = [baseDetails].concat(remainingAnnotations.map(function (annotation) {
         return String(annotation.annotationText || annotation.details || '').trim();
