@@ -37,8 +37,8 @@ const APP_CONFIG = {
     bag_inhouse_assembly: 100,    // сборка у нас
 	
     // Сборка презентаций
-    presentation_bind_metal: 500,   // Металлическая пружина
-    presentation_bind_plastic: 350, // Пластиковая пружина
+    presentation_bind_metal: 200,   // Металлическая пружина
+    presentation_bind_plastic: 150, // Пластиковая пружина
 
     // Календари (ножки, пружина, Эксклюзив)
     calendar_bind: 350,
