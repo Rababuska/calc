@@ -41,7 +41,7 @@ const APP_CONFIG = {
     presentation_bind_plastic: 150, // Пластиковая пружина
 
     // Календари (ножки, пружина, Эксклюзив)
-    calendar_bind: 350,
+    calendar_bind: 200,
     calendar_delivery: 5400,          // доставка Эксклюзив
     calendar_exclusive_markup: 1.35,  // наценка на подрядчика
     calendar_hard_cover_cost: 920,
