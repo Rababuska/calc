@@ -349,12 +349,19 @@ test('does not fall back to missing legacy service controls while the iframe is 
   assert.equal(setup.bridge.setSouvenirServices(['Тиснение: Блокноты / Ежедневники']), false);
 });
 
-test('requires a selected order service and stores its details with the quote item', async () => {
+test('allows an order calculation without a service and retains its details when one is selected', async () => {
   const setup = createBridge();
   await setup.bridge.load('souvenir');
 
   assert.equal(setup.bridge.canAdd('souvenir'), true);
+  assert.equal(setup.bridge.canAddDecoration(), true);
+  const withoutService = setup.bridge.add('souvenir');
+  assert.deepEqual(Array.from(withoutService.services), []);
+  assert.equal(withoutService.total, 2500);
+  assert.equal(withoutService.productionCost, 1800);
+  setup.fields.C9.value = '0';
   assert.equal(setup.bridge.canAddDecoration(), false);
+  setup.fields.C9.value = '2500';
 
   Object.assign(setup.frameWindow.getServiceSlot(1), {
     service: { name: 'Тампопечать: ручки' },
@@ -374,6 +381,28 @@ test('requires a selected order service and stores its details with the quote it
   assert.equal(item.serviceOptions[0].name, 'Тампопечать: ручки');
   assert.equal(item.calculationOptions.inputs.F4, '15000');
   assert.equal(item.calculationOptions.vat, 'withVAT');
+});
+
+test('restores and recalculates supplier decoration without a selected service', async () => {
+  const setup = createBridge();
+  await setup.bridge.load('souvenir');
+  setup.frameWindow.calc = function () {
+    const quantity = Number(setup.fields.C5.value);
+    setup.fields.C8.value = '250';
+    setup.fields.C9.value = String(250 * quantity);
+    setup.fields.F9.value = String(180 * quantity);
+  };
+  const annotation = setup.bridge.add('souvenir');
+  setup.frameWindow.getServiceSlot(1).service = { name: 'Old service' };
+  setup.fields.C3.value = '999';
+  assert.equal(setup.bridge.prepareSouvenirRun(annotation, annotation), true);
+  assert.equal(setup.fields.C3.value, '100');
+  assert.equal(setup.frameWindow.getServiceSlot(1).service, null);
+  const runs = setup.bridge.calculateDecorationRuns([20, 30]);
+  assert.deepEqual(Array.from(runs, function (run) { return [run.quantity, run.total, run.productionCost]; }), [
+    [20, 5000, 3600], [30, 7500, 5400]
+  ]);
+  assert.equal(setup.fields.C5.value, '10');
 });
 
 test('restores souvenir expenses and calculation settings when editing a saved annotation', async () => {

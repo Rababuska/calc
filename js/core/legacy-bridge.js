@@ -355,9 +355,7 @@
 
   function canAddDecoration() {
     const context = souvenirContext();
-    if (!context || !context.canAdd) return false;
-    if (context.mode === 'order') return context.serviceSlots.length > 0;
-    return true;
+    return Boolean(context && context.canAdd);
   }
 
   function getDecorationDetails(context) {

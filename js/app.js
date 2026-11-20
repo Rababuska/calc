@@ -891,14 +891,14 @@ async function fetchSouvenirResource(url, errorMessage) {
       ? (editingStockDecoration
         ? (pendingDecorationRestoreUnavailable
           ? 'Восстанавливаю параметры складской позиции…'
-          : (ready ? 'Нанесение рассчитано. Сохраните изменения.' : 'Выберите услугу и выполните расчет нанесения'))
+          : (ready ? 'Нанесение рассчитано. Сохраните изменения.' : 'Выполните расчет нанесения'))
         : (editingAnnotation
         ? (ready ? (pendingDecorationRestoreUnavailable
           ? 'Исходные параметры нанесения отсутствовали. Новый расчет готов и заменит старую запись; проверьте цену, расходы и услугу перед сохранением. Было: ' + previousDecoration
           : 'Новое нанесение рассчитано. Было: ' + previousDecoration) : (canKeepExistingDecoration
           ? 'Не удалось восстановить исходное нанесение. Оставьте его без изменений или удалите и добавьте заново: ' + previousDecoration
           : 'Измените нанесение: ' + previousDecoration))
-        : (ready ? 'Расчет готов для: ' + pendingItem.title : 'Выберите услугу и выполните расчет нанесения')))
+        : (ready ? 'Расчет готов для: ' + pendingItem.title : 'Выполните расчет нанесения')))
       : (editingPoly
         ? (ready ? 'Новая спецификация рассчитана. Сохраните изменения позиции' : 'Проверьте спецификацию позиции')
         : (ready ? 'Расчет готов к добавлению в КП' : 'Выполните расчет и проверьте его параметры'));
@@ -2120,26 +2120,27 @@ function editQuoteCell(cell) {
       const annotation = currentItem && currentItem.annotations && currentItem.annotations[pendingDecorationEditIndex];
       if (!annotation) return;
       const services = Array.isArray(annotation.services) ? annotation.services : [];
-      let servicesRestored = services.length > 0
-        && Array.isArray(annotation.serviceOptions)
-        && LegacyBridge.setSouvenirServices(services, annotation.serviceOptions);
-      if (!services.length) LegacyBridge.setSouvenirServices([]);
+      let servicesRestored = !services.length
+        ? LegacyBridge.setSouvenirServices([])
+        : Array.isArray(annotation.serviceOptions) && LegacyBridge.setSouvenirServices(services, annotation.serviceOptions);
       const calculationRestored = LegacyBridge.setSouvenirCalculation(annotation, currentItem);
       pendingDecorationRestoreUnavailable = !servicesRestored || !calculationRestored;
       updateCalculationStatus();
-      if (!calculationRestored || (services.length && !servicesRestored)) {
+      if (!calculationRestored || !servicesRestored) {
         const requestedEditIndex = pendingDecorationEditIndex;
         let attemptsRemaining = 15;
         const retryCalculationRestore = function () {
           if (restoreGeneration !== decorationRestoreGeneration
             || String(pendingDecorationItemId) !== String(currentItem.id)
             || pendingDecorationEditIndex !== requestedEditIndex) return;
-          if (services.length) servicesRestored = LegacyBridge.setSouvenirServices(services, annotation.serviceOptions);
+          if (!services.length || Array.isArray(annotation.serviceOptions)) {
+            servicesRestored = LegacyBridge.setSouvenirServices(services, annotation.serviceOptions);
+          }
           const retryRestored = LegacyBridge.setSouvenirCalculation(annotation, currentItem);
           pendingDecorationRestoreUnavailable = !servicesRestored || !retryRestored;
           updateCalculationStatus();
           attemptsRemaining -= 1;
-          if ((!retryRestored || (services.length && !servicesRestored)) && attemptsRemaining > 0) {
+          if ((!retryRestored || !servicesRestored) && attemptsRemaining > 0) {
             window.setTimeout(retryCalculationRestore, 100);
           }
         };
